@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pixt IA - AutoHub</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Babel (Para converter JSX no navegador) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"></script>
+  
+  <!-- Three.js (Para o Cubo 3D na tela de Login) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <style>
+    body { 
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      overflow: hidden;
+    }
+    /* Estilização da barra de scroll premium */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; border: 2px solid transparent; background-clip: content-box; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; border: 2px solid transparent; background-clip: content-box; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module">
+    import React, { useState, useEffect, useRef } from 'https://esm.sh/react@18.2.0';
+    import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
+    import {
+      LayoutDashboard, Users, Database, Settings, Play, Clock, DollarSign, Calendar, Cpu, LogOut,
+      CreditCard, KanbanSquare, Bot, Zap, ArrowRight, Mail, Lock, AlertCircle, Plus, UploadCloud,
+      FileText, Smartphone, Globe, Instagram, Linkedin, Power, MessageSquare, Inbox, TrendingUp,
+      Target, CheckCircle2, AlertTriangle, Receipt, Search, Filter, Star, Activity, Ticket,
+      Workflow, History, CheckCircle, BarChart3, Bell,
+      LineChart, BookOpen, FilePen, Timer, Trophy, MessageCircle, Brain, UserCircle2,
+      ListChecks, Award, ClipboardList, TrendingDown, Hash, Layers, Briefcase,
+      BarChart2, ChevronRight, Edit2, Trash2, X, Check, Percent, RefreshCw,
+      AlertOctagon, Users2, PieChart, Sparkles, ArrowUpRight, ArrowDownRight
+    } from 'https://esm.sh/lucide-react@0.292.0';
+
+    const AGENTS = [
+      { id: 'vendas', name: 'Vendas+', role: 'Agente Vendedor IA', desc: 'Automação do atendimento até a conversão final.', price: 'R$1.500,00 / mês', icon: DollarSign },
+      { id: 'leadflow', name: 'Lead Flow', role: 'Triagem e CRM', desc: 'Qualificação técnica de leads, gestão de CRM e follow-up ativo.', price: 'R$2.000,00 / mês', icon: Users },
+      { id: 'booker', name: 'Booker', role: 'Gestão de Agenda', desc: 'Consulta disponibilidade em tempo real e marca reuniões.', price: 'R$1.500,00 / mês', icon: Calendar },
+      { id: 'expertai', name: 'ExpertAI', role: 'Suporte Técnico', desc: 'Reduz 90% dos chamados com documentação RAG.', price: 'R$2.000,00 / mês', icon: Bot },
+      { id: 'custom', name: 'Automações Custom', role: 'Core da PIXT', desc: 'Desenvolvimento de arquiteturas de IA do zero para desafios complexos.', price: 'Sob Consulta', icon: Cpu }
+    ];
+
+    const Cube3DBackground = () => {
+      const mountRef = useRef(null);
+      useEffect(() => {
+        let reqId; let renderer;
+        const initScene = () => {
+          if (!window.THREE || !mountRef.current) return;
+          const THREE = window.THREE;
+          const W = mountRef.current.clientWidth;
+          const H = mountRef.current.clientHeight;
+          const scene = new THREE.Scene();
+          const camera = new THREE.PerspectiveCamera(40, W/H, 0.1, 1000);
+          camera.position.z = 14;
+          renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+          renderer.setSize(W, H);
+          renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+          if (mountRef.current.firstChild) mountRef.current.removeChild(mountRef.current.firstChild);
+          mountRef.current.appendChild(renderer.domElement);
+          scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+          const dl1 = new THREE.DirectionalLight(0xffffff, 2.5); dl1.position.set(10,20,15); scene.add(dl1);
+          const dl2 = new THREE.DirectionalLight(0xffffff, 1.5); dl2.position.set(-15,0,-10); scene.add(dl2);
+          const createPTexture = () => {
+            const c = document.createElement('canvas'); c.width = 512; c.height = 512;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#202020'; ctx.fillRect(0,0,512,512);
+            ctx.filter = 'blur(4px)'; ctx.fillStyle = '#ffffff';
+            ctx.font = '900 420px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('P',256,276);
+            const t = new THREE.CanvasTexture(c); t.anisotropy = 16; return t;
+          };
+          const createRoundedBox = (size, radius, segs) => {
+            const geo = new THREE.BoxGeometry(size, size, size, segs, segs, segs);
+            const pos = geo.attributes.position, inner = size/2 - radius;
+            for (let i=0; i<pos.count; i++) {
+                let x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+                let cx = Math.max(-inner, Math.min(inner,x)), cy = Math.max(-inner, Math.min(inner,y)), cz = Math.max(-inner, Math.min(inner,z));
+                let dx = x-cx, dy = y-cy, dz = z-cz, len = Math.sqrt(dx*dx + dy*dy + dz*dz) || 1;
+                pos.setXYZ(i, cx + dx/len*radius, cy + dy/len*radius, cz + dz/len*radius);
+            }
+            geo.computeVertexNormals(); return geo;
+          };
+          const pBump = createPTexture();
+          const roundGeo = createRoundedBox(0.85, 0.08, 12);
+          const matDark = new THREE.MeshStandardMaterial({color:0x222222, roughness:0.5, metalness:0.2, bumpMap:pBump, bumpScale:3.0});
+          const matBrand = new THREE.MeshStandardMaterial({color:0xc6f432, emissive:0xc6f432, emissiveIntensity:0.4, roughness:0.2, metalness:0.2, bumpMap:pBump, bumpScale:1.8});
+          const cubeGroup = new THREE.Group(); scene.add(cubeGroup);
+          const cubes = []; const gap = 0.95;
+          const outerDirs=[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1],[1,1,1],[-1,-1,-1],[1,-1,1],[-1,1,-1]];
+          for (let cIdx=0; cIdx<=outerDirs.length; cIdx++) {
+            let isC=(cIdx===0), nx=0, ny=0, nz=0;
+            if (!isC) { let d = outerDirs[cIdx-1], dl = Math.sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]); nx=d[0]/dl; ny=d[1]/dl; nz=d[2]/dl; }
+            for (let ix=-1; ix<=1; ix++) {
+                for (let iy=-1; iy<=1; iy++) {
+                    for (let iz=-1; iz<=1; iz++) {
+                        let isGreen = Math.random() > 0.7;
+                        let mesh = new THREE.Mesh(roundGeo, isGreen ? matBrand : matDark);
+                        let ex = ix*gap, ey = iy*gap, ez = iz*gap;
+                        if (!isC) { ex+=nx*4; ey+=ny*4; ez+=nz*4; }
+                        mesh.userData = { ox: ix*gap, oy: iy*gap, oz: iz*gap, nx: nx, ny: ny, nz: nz, isCenter: isC, baseQuat: new THREE.Quaternion(), lerpSpeed: 0.05 + Math.random() * 0.13 };
+                        mesh.visible = isC; mesh.position.set(ex, ey, ez);
+                        cubes.push(mesh); cubeGroup.add(mesh);
+                    }
+                }
+            }
+          }
+          let mouse = new THREE.Vector2(0,0);
+          let activeLayers = [];
+          const _heroTmpQ = new THREE.Quaternion();
+          const _heroTmpV = new THREE.Vector3();
+          const handleMouseMove = (e) => {
+            const rect = mountRef.current?.getBoundingClientRect();
+            if(rect) { mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1; mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1; }
+          };
+          window.addEventListener('mousemove', handleMouseMove, {passive:true});
+          const commitLayerRotation = (axis, slice, angle) => {
+            const round = v => Math.round(v*100)/100;
+            const cos = Math.round(Math.cos(angle)), sin = Math.round(Math.sin(angle));
+            const q = new THREE.Quaternion(), av = new THREE.Vector3(axis==='x'?1:0, axis==='y'?1:0, axis==='z'?1:0);
+            q.setFromAxisAngle(av, angle);
+            cubes.forEach(c => {
+                let ud = c.userData;
+                if (ud.isCenter && Math.abs(ud['o'+axis]-slice)<0.1) {
+                    let px=ud.ox, py=ud.oy, pz=ud.oz;
+                    if (axis==='x') { ud.oy=round(py*cos-pz*sin); ud.oz=round(py*sin+pz*cos); }
+                    else if (axis==='y') { ud.ox=round(px*cos+pz*sin); ud.oz=round(-px*sin+pz*cos); }
+                    else { ud.ox=round(px*cos-py*sin); ud.oy=round(px*sin+py*cos); }
+                    ud.baseQuat.premultiply(q);
+                }
+            });
+          };
+          const clock = new THREE.Clock();
+          const animate = () => {
+            reqId = requestAnimationFrame(animate);
+            let t = clock.getElapsedTime();
+            if (activeLayers.length < 2 && Math.random() > 0.985) {
+                activeLayers.push({ axis: ['x','y','z'][Math.floor(Math.random()*3)], slice: [-gap, 0, gap][Math.floor(Math.random()*3)], targetAngle: (Math.PI/2)*(Math.random()>0.5?1:-1), angle: 0 });
+            }
+            for (let li = activeLayers.length - 1; li >= 0; li--) {
+                let al = activeLayers[li];
+                al.angle += (al.targetAngle - al.angle) * 0.18;
+                if (Math.abs(al.targetAngle - al.angle) < 0.01) { commitLayerRotation(al.axis, al.slice, al.targetAngle); activeLayers.splice(li, 1); }
+            }
+            cubeGroup.rotation.y = t * 0.2 + (mouse.x * 0.3);
+            cubeGroup.rotation.x = t * 0.1 + 0.2 - (mouse.y * 0.3);
+            cubeGroup.position.y = Math.sin(t * 1.5) * 0.2;
+            cubeGroup.scale.setScalar(1.4); 
+            cubes.forEach(c => {
+                let ud = c.userData; c.quaternion.copy(ud.baseQuat);
+                for (let ali = 0; ali < activeLayers.length; ali++) {
+                    let al2 = activeLayers[ali];
+                    if(ud.isCenter && Math.abs(ud['o'+al2.axis]-al2.slice)<0.1){
+                        let ax=al2.axis, ag=al2.angle;
+                        _heroTmpV.set(ax==='x'?1:0, ax==='y'?1:0, ax==='z'?1:0);
+                        _heroTmpQ.setFromAxisAngle(_heroTmpV, ag);
+                        c.quaternion.premultiply(_heroTmpQ);
+                    }
+                }
+                let hasActiveSlice = activeLayers.some(al3 => ud.isCenter && Math.abs(ud['o'+al3.axis]-al3.slice)<0.1);
+                if(hasActiveSlice && activeLayers.length > 0) {
+                    let al4 = activeLayers[0];
+                    let ax4=al4.axis, ag4=al4.angle, co4=Math.cos(ag4), si4=Math.sin(ag4);
+                    let px=ud.ox, py=ud.oy, pz=ud.oz;
+                    if(ax4==='x'){py=ud.oy*co4-ud.oz*si4;pz=ud.oy*si4+ud.oz*co4;}
+                    else if(ax4==='y'){px=ud.ox*co4+ud.oz*si4;pz=-ud.ox*si4+ud.oz*co4;}
+                    else{px=ud.ox*co4-ud.oy*si4;py=ud.ox*si4+ud.oy*co4;}
+                    c.position.set(px, py, pz);
+                } else {
+                    let tX = ud.ox, tY = ud.oy, tZ = ud.oz;
+                    let ls = ud.lerpSpeed || 0.1;
+                    c.position.x += (tX - c.position.x) * ls;
+                    c.position.y += (tY - c.position.y) * ls;
+                    c.position.z += (tZ - c.position.z) * ls;
+                }
+                c.visible = ud.isCenter; 
+            });
+            renderer.render(scene, camera);
+          };
+          animate();
+          const handleResize = () => {
+            if(!mountRef.current) return;
+            const w = mountRef.current.clientWidth, h = mountRef.current.clientHeight;
+            renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+          };
+          window.addEventListener('resize', handleResize);
+          return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('resize', handleResize);
+            cancelAnimationFrame(reqId); if (renderer) renderer.dispose();
+          };
+        };
+        if (!window.THREE) {
+          const script = document.createElement('script');
+          script.src = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
+          script.onload = initScene; document.head.appendChild(script);
+        } else { initScene(); }
+      }, []);
+      return <div ref={mountRef} className="absolute inset-0 w-full h-full pointer-events-auto z-0" />;
+    };
+
+    const App = () => {
+      const [isAuthenticated, setIsAuthenticated] = useState(false);
+      const [selectedAgent, setSelectedAgent] = useState(AGENTS[0]); 
+      const [currentAgent, setCurrentAgent] = useState(null);
+      const [activeTab, setActiveTab] = useState('overview');
+      const [isAgentOn, setIsAgentOn] = useState(true);
+      const [whatsappNumbers, setWhatsappNumbers] = useState(['+55 (11) 98765-4321']);
+
+      const primaryColor = '#c6f432'; 
+      const borderLight = '#e2e8f0'; 
+      const textDarkGreen = '#658210'; 
+
+      const handleAddWhatsapp = () => setWhatsappNumbers([...whatsappNumbers, '']);
+      const handleWhatsappChange = (idx, value) => {
+        const updated = [...whatsappNumbers];
+        updated[idx] = value;
+        setWhatsappNumbers(updated);
+      };
+
+      if (!isAuthenticated) {
+        return (
+          <div className="h-screen w-full relative font-sans bg-gray-50 overflow-hidden flex flex-col md:flex-row">
+            <svg className="absolute top-[-15%] left-0 w-full h-[130%] text-black opacity-5 pointer-events-none z-0 select-none" viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+                <path d="M -100 200 C 200 400 300 -50 500 200 S 700 600 1000 400" stroke="currentColor" strokeWidth="80" fill="none" strokeLinecap="round"/>
+                <path d="M -50 600 C 250 800 450 300 700 600 S 900 900 1100 700" stroke="currentColor" strokeWidth="120" fill="none" strokeLinecap="round"/>
+            </svg>
+            <div className="absolute inset-0 w-full h-full opacity-90 z-0"><Cube3DBackground /></div>
+            
+            <div className="relative z-10 w-full flex flex-col md:flex-row flex-1 pointer-events-none">
+              <div className="hidden md:flex w-1/2 flex-col p-12 overflow-hidden pointer-events-auto text-gray-900">
+                <div className="flex items-center space-x-3 mb-8">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-sm" style={{ backgroundColor: primaryColor }}><Zap size={22} className="text-black" fill="currentColor" /></div>
+                  <h1 className="text-4xl font-extrabold tracking-tight">Pixt <span style={{ color: primaryColor }}>IA</span></h1>
+                </div>
+                <div className="mb-6 bg-white/70 backdrop-blur-md p-5 rounded-2xl border border-white max-w-sm shadow-sm">
+                  <h2 className="text-2xl font-bold mb-1">Escolha o Agente</h2>
+                  <p className="text-gray-600 text-sm font-medium">Aceda à sua área operacional.</p>
+                </div>
+                <div className="flex-1 overflow-y-auto pr-4 space-y-3 pb-12" style={{ scrollbarWidth: 'none' }}>
+                   {AGENTS.map((agent) => {
+                     const Icon = agent.icon; const isSelected = selectedAgent?.id === agent.id;
+                     return (
+                       <div key={agent.id} onClick={() => setSelectedAgent(agent)} className={`p-4 rounded-2xl cursor-pointer transition-all duration-300 backdrop-blur-xl bg-white/85 border-2 ${isSelected ? 'shadow-lg scale-[1.02]' : 'border-white/60 shadow-sm hover:border-gray-300 hover:shadow-md'}`} style={{ borderColor: isSelected ? primaryColor : undefined, maxWidth: '400px' }}>
+                          <div className="flex items-start gap-4">
+                            <div className={`p-3 rounded-xl transition-colors shrink-0 ${isSelected ? 'bg-black text-[#c6f432]' : 'bg-gray-100 text-gray-600'}`}><Icon size={24} /></div>
+                            <div><h3 className="text-lg font-bold text-gray-900 mb-1 leading-tight">{agent.name}</h3><p className="text-sm text-gray-600 leading-snug">{agent.desc}</p></div>
+                          </div>
+                       </div>
+                     );
+                   })}
+                </div>
+              </div>
+
+              <div className="w-full md:w-1/2 flex items-center justify-center p-8 pointer-events-auto">
+                 <div className="w-full max-w-md backdrop-blur-xl bg-white/85 p-8 sm:p-10 rounded-[2.5rem] shadow-2xl border border-white/60">
+                   <div className="text-center md:text-left mb-8">
+                     <h2 className="text-3xl font-black text-gray-900 mb-2 tracking-tight">Aceder</h2>
+                     <p className="text-gray-500 font-medium">Autenticação obrigatória.</p>
+                   </div>
+                   <form onSubmit={(e) => { e.preventDefault(); setCurrentAgent(selectedAgent); setActiveTab('overview'); setIsAuthenticated(true); }} className="space-y-5">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">E-mail Corporativo</label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"><Mail size={18} className="text-gray-400" /></div>
+                          <input type="email" className="w-full bg-white/80 border border-gray-200 rounded-xl py-3.5 pl-11 pr-4 text-gray-900 focus:border-[#658210] focus:ring-1 focus:ring-[#658210] transition-all outline-none font-medium" placeholder="ceo@pixt.ia" defaultValue="admin@pixt.ia" required />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Senha</label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"><Lock size={18} className="text-gray-400" /></div>
+                          <input type="password" className="w-full bg-white/80 border border-gray-200 rounded-xl py-3.5 pl-11 pr-4 text-gray-900 focus:border-[#658210] focus:ring-1 focus:ring-[#658210] transition-all outline-none font-medium" placeholder="••••••••" defaultValue="12345678" required />
+                        </div>
+                      </div>
+                      <button type="submit" className="w-full py-4 px-4 rounded-xl font-bold text-black transition-all flex items-center justify-center gap-2 shadow-[0_5px_15px_rgba(198,244,50,0.2)] hover:-translate-y-0.5" style={{ backgroundColor: primaryColor }}><span>Entrar no Dashboard</span><ArrowRight size={18} /></button>
+                   </form>
+                 </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="h-screen w-full flex font-sans relative overflow-hidden bg-gray-50 text-gray-900">
+          <svg className="absolute top-[-15%] left-0 w-full h-[130%] text-black opacity-5 pointer-events-none z-0 select-none" viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+              <path d="M -100 200 C 200 400 300 -50 500 200 S 700 600 1000 400" stroke="currentColor" strokeWidth="80" fill="none" strokeLinecap="round"/>
+              <path d="M -50 600 C 250 800 450 300 700 600 S 900 900 1100 700" stroke="currentColor" strokeWidth="120" fill="none" strokeLinecap="round"/>
+          </svg>
+
+          <aside className="w-64 border-r flex flex-col transition-all bg-white/60 backdrop-blur-xl relative z-10 shrink-0" style={{ borderColor: borderLight }}>
+            <div className="h-20 flex items-center px-6 border-b border-gray-200/50 shrink-0">
+              <div className="w-8 h-8 rounded-lg mr-3 flex items-center justify-center shadow-sm" style={{ backgroundColor: primaryColor }}>{React.createElement(currentAgent.icon, { size: 18, className: "text-black" })}</div>
+              <div className="flex flex-col"><span className="font-extrabold text-lg tracking-tight text-gray-900 leading-none">{currentAgent.name}</span><span className="text-[10px] text-gray-500 font-bold uppercase mt-1">Painel Ativo</span></div>
+            </div>
+            <div className="p-4 flex-1 overflow-y-auto">
+              <nav className="space-y-1.5">
+                <NavItem icon={<TrendingUp size={18} />} label="Visão Geral" isActive={activeTab === 'overview'} onClick={() => setActiveTab('overview')} primaryColor={primaryColor} />
+                
+                {/* VENDAS+ MENUS */}
+                {currentAgent.id === 'vendas' && (
+                  <>
+                    <NavItem icon={<KanbanSquare size={18} />} label="Pipeline de Vendas" isActive={activeTab === 'pipeline'} onClick={() => setActiveTab('pipeline')} primaryColor={primaryColor} />
+                    <NavItem icon={<Inbox size={18} />} label="Conversas (Intenções)" isActive={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} primaryColor={primaryColor} />
+                    <NavItem icon={<Receipt size={18} />} label="Pagamentos & Faturas" isActive={activeTab === 'faturas'} onClick={() => setActiveTab('faturas')} primaryColor={primaryColor} />
+                  </>
+                )}
+
+                {/* LEAD FLOW MENUS */}
+                {currentAgent.id === 'leadflow' && (
+                  <>
+                    <NavItem icon={<Users size={18} />} label="Gestão CRM" isActive={activeTab === 'crm'} onClick={() => setActiveTab('crm')} primaryColor={primaryColor} />
+                    <NavItem icon={<Inbox size={18} />} label="Conversas (Intenções)" isActive={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} primaryColor={primaryColor} />
+                  </>
+                )}
+
+                {/* BOOKER MENUS (Agora com Conversas) */}
+                {currentAgent.id === 'booker' && (
+                  <>
+                    <NavItem icon={<Calendar size={18} />} label="Agenda & Meetings" isActive={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} primaryColor={primaryColor} />
+                    <NavItem icon={<Inbox size={18} />} label="Conversas (Intenções)" isActive={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} primaryColor={primaryColor} />
+                  </>
+                )}
+
+                {currentAgent.id === 'expertai' && <NavItem icon={<Database size={18} />} label="Base RAG" isActive={activeTab === 'rag'} onClick={() => setActiveTab('rag')} primaryColor={primaryColor} />}
+                
+                {currentAgent.id === 'custom' && (
+                  <>
+                    <NavItem icon={<Workflow size={18} />} label="Builder Visual" isActive={activeTab === 'builder'} onClick={() => setActiveTab('builder')} primaryColor={primaryColor} />
+                    <NavItem icon={<History size={18} />} label="Execuções & Logs" isActive={activeTab === 'logs'} onClick={() => setActiveTab('logs')} primaryColor={primaryColor} />
+                  </>
+                )}
+
+                <div className="pt-4 pb-2 shrink-0"><p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-3">Plataforma</p></div>
+                <NavItem icon={<BarChart2 size={18} />} label="Revenue Dashboard" isActive={activeTab === 'revenue'} onClick={() => setActiveTab('revenue')} primaryColor={primaryColor} />
+                <NavItem icon={<UserCircle2 size={18} />} label="Contatos 360°" isActive={activeTab === 'contacts'} onClick={() => setActiveTab('contacts')} primaryColor={primaryColor} />
+                <NavItem icon={<ListChecks size={18} />} label="Gestão de Tarefas" isActive={activeTab === 'tasks'} onClick={() => setActiveTab('tasks')} primaryColor={primaryColor} />
+                <NavItem icon={<Activity size={18} />} label="Performance Agentes" isActive={activeTab === 'agentperf'} onClick={() => setActiveTab('agentperf')} primaryColor={primaryColor} />
+                <NavItem icon={<Timer size={18} />} label="Time Tracking" isActive={activeTab === 'timetrack'} onClick={() => setActiveTab('timetrack')} primaryColor={primaryColor} />
+                <NavItem icon={<BookOpen size={18} />} label="Base de Conhecimento" isActive={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} primaryColor={primaryColor} />
+                <NavItem icon={<FilePen size={18} />} label="Contratos & Propostas" isActive={activeTab === 'contracts'} onClick={() => setActiveTab('contracts')} primaryColor={primaryColor} />
+                <NavItem icon={<Trophy size={18} />} label="Metas & Gamificação" isActive={activeTab === 'goals'} onClick={() => setActiveTab('goals')} primaryColor={primaryColor} />
+                <NavItem icon={<MessageCircle size={18} />} label="Comunicação Interna" isActive={activeTab === 'chat'} onClick={() => setActiveTab('chat')} primaryColor={primaryColor} />
+                <NavItem icon={<Brain size={18} />} label="Forecasting IA" isActive={activeTab === 'forecast'} onClick={() => setActiveTab('forecast')} primaryColor={primaryColor} />
+                <NavItem icon={<Hash size={18} />} label="Lead Scoring" isActive={activeTab === 'leadscore'} onClick={() => setActiveTab('leadscore')} primaryColor={primaryColor} />
+                <NavItem icon={<ClipboardList size={18} />} label="Relatórios Auto." isActive={activeTab === 'reports'} onClick={() => setActiveTab('reports')} primaryColor={primaryColor} />
+
+                <div className="pt-4 pb-2 shrink-0"><p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-3">Administração</p></div>
+                <NavItem icon={<Settings size={18} />} label="Configurações" isActive={activeTab === 'settings'} onClick={() => setActiveTab('settings')} primaryColor={primaryColor} />
+              </nav>
+            </div>
+            <div className="p-4 border-t border-gray-200/50 shrink-0"><button onClick={() => { setIsAuthenticated(false); setCurrentAgent(null); }} className="w-full flex items-center px-4 py-3 rounded-xl text-gray-500 hover:bg-white/80 hover:text-gray-900 transition-all font-medium"><LogOut size={18} className="mr-3" /><span className="text-sm">Sair</span></button></div>
+          </aside>
+
+          <main className="flex-1 flex flex-col overflow-hidden relative z-10">
+            <header className="h-20 border-b border-gray-200/50 flex items-center justify-between px-8 z-10 bg-white/60 backdrop-blur-xl shrink-0">
+              <div className="flex items-center text-sm text-gray-500 font-medium"><span>PIXT Workspace</span><span className="mx-2">/</span><span className="font-bold text-gray-900">{currentAgent.name}</span></div>
+              <div className="flex items-center space-x-4"><div className={`flex items-center space-x-2 px-4 py-1.5 rounded-full border shadow-sm transition-all ${isAgentOn ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}><div className={`w-2 h-2 rounded-full ${isAgentOn ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div><span className={`text-xs font-bold ${isAgentOn ? 'text-green-700' : 'text-gray-500'}`}>{isAgentOn ? 'Conectado' : 'Desligado'}</span></div></div>
+            </header>
+
+            <div className="flex-1 overflow-y-auto p-8 relative z-10">
+              <div className="max-w-6xl mx-auto pb-20">
+                <div className="mb-8 border-b border-gray-200/50 pb-6 flex justify-between items-end shrink-0">
+                  <div>
+                    <h1 className="text-3xl font-extrabold tracking-tight mb-2 text-gray-900">
+                      {activeTab === 'overview' ? `Visão Geral: ${currentAgent.name}` :
+                       activeTab === 'settings' ? 'Configurações do Agente' :
+                       activeTab === 'pipeline' ? 'Pipeline de Vendas' :
+                       activeTab === 'inbox' ? 'Conversas e Intenções' :
+                       activeTab === 'faturas' ? 'Gerenciador de Pagamentos' :
+                       activeTab === 'crm' ? 'Espelhamento de CRM' :
+                       activeTab === 'calendar' ? 'Agenda Conectada' :
+                       activeTab === 'revenue' ? 'Revenue Dashboard' :
+                       activeTab === 'contacts' ? 'Contatos 360°' :
+                       activeTab === 'tasks' ? 'Gestão de Tarefas' :
+                       activeTab === 'agentperf' ? 'Performance dos Agentes' :
+                       activeTab === 'timetrack' ? 'Time Tracking' :
+                       activeTab === 'knowledge' ? 'Base de Conhecimento' :
+                       activeTab === 'contracts' ? 'Contratos & Propostas' :
+                       activeTab === 'goals' ? 'Metas & Gamificação' :
+                       activeTab === 'chat' ? 'Comunicação Interna' :
+                       activeTab === 'forecast' ? 'Forecasting com IA' :
+                       activeTab === 'leadscore' ? 'Lead Scoring Automático' :
+                       activeTab === 'reports' ? 'Relatórios Automáticos' : 'Módulo Ativo'}
+                    </h1>
+                    <p className="text-gray-500 font-medium">{currentAgent.desc}</p>
+                  </div>
+                  {activeTab === 'overview' && <div className="flex items-center gap-3 bg-white/80 p-2 pr-4 rounded-full border border-gray-200 shadow-sm backdrop-blur-sm"><div className={`p-2 rounded-full ${isAgentOn ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}><Power size={18} /></div><span className="text-sm font-bold text-gray-700">Automação</span><label className="relative inline-flex items-center cursor-pointer ml-2"><input type="checkbox" className="sr-only peer" checked={isAgentOn} onChange={() => setIsAgentOn(!isAgentOn)} /><div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#658210]"></div></label></div>}
+                </div>
+
+                {/* OVERVIEW CONTENT */}
+                {activeTab === 'overview' && (
+                  <div className="space-y-8 animate-in fade-in duration-500 shrink-0">
+                    <div className="bg-gray-900 rounded-[2rem] p-8 shadow-2xl relative overflow-hidden flex flex-col md:flex-row items-center justify-between border border-gray-800 shrink-0">
+                      <div className="absolute top-0 right-0 w-64 h-64 blur-[80px] opacity-20 rounded-full translate-x-1/2 -translate-y-1/2" style={{ backgroundColor: primaryColor }}></div>
+                      <div className="relative z-10"><p className="text-gray-400 font-bold uppercase tracking-widest text-xs mb-2 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Impacto da IA em Tempo Real</p><div className="flex items-baseline gap-4">
+                        <h2 className="text-5xl md:text-7xl font-black tracking-tighter" style={{ color: primaryColor }}>
+                           {currentAgent.id === 'vendas' ? 'R$ 142k' : currentAgent.id === 'leadflow' ? '84/100' : currentAgent.id === 'booker' ? '38' : '89%'}
+                        </h2>
+                      </div><p className="text-green-400 text-sm font-medium mt-2 flex items-center gap-1"><TrendingUp size={16} /> {currentAgent.id === 'vendas' ? '+24% em relação ao mês passado' : 'Métrica de performance otimizada'}</p></div>
+                      <div className="relative z-10 flex gap-6 mt-8 md:mt-0 bg-black/40 p-6 rounded-2xl border border-white/5 shrink-0"><div><p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Ticket Médio</p><p className="text-2xl font-bold text-white">R$ 1.850</p></div><div className="w-px bg-gray-800"></div><div><p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Conversão</p><p className="text-2xl font-bold text-white">12.4%</p></div></div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                      <StatCard title="Interações" value="4.829" trend="+15%" primaryColor={primaryColor} borderLight={borderLight} cardLight="rgba(255,255,255,0.8)" />
+                      <StatCard title="Recebidas" value="3.102" trend="+8%" primaryColor={primaryColor} borderLight={borderLight} cardLight="rgba(255,255,255,0.8)" />
+                      <StatCard title="Ativas" value="142" trend="Respondendo..." isStatus primaryColor={primaryColor} borderLight={borderLight} cardLight="rgba(255,255,255,0.8)" />
+                      <StatCard title="Eventos" value="98" trend="Sincronizado" primaryColor={primaryColor} borderLight={borderLight} cardLight="rgba(255,255,255,0.8)" />
+                    </div>
+                  </div>
+                )}
+
+                {/* PIPELINES (Vendas+ & Lead Flow) */}
+                {(activeTab === 'pipeline' || activeTab === 'crm') && (
+                  <div className="animate-in fade-in duration-500 h-[calc(100vh-280px)] min-h-[500px] flex gap-6 overflow-x-auto pb-4 shrink-0" style={{ scrollbarWidth: 'thin' }}>
+                    <KanbanColumn title="Novos Leads" count="12" sub="Fila de Entrada" colorClass="gray"><PipelineCard name="Carlos Mendes" company="TechCorp" value="Score: 45" tag="Aguardando" /></KanbanColumn>
+                    <KanbanColumn title="Em Atendimento" count="8" sub="Triagem Ativa" colorClass="blue"><PipelineCard name="Mariana Costa" company="InovaSys" value="Score: 82" tag="Interesse" colorType="blue" /></KanbanColumn>
+                    <KanbanColumn title="Sem Resposta" count="4" sub="Follow-up" colorClass="slate"><PipelineCard name="Camila Rocha" company="Consultoria" value="Score: 20" tag="Frio" /></KanbanColumn>
+                    <KanbanColumn title="Humano" count="2" sub="Complexo" colorClass="yellow"><PipelineCard name="João Pedro" company="Log S/A" value="Score: 95" tag="Ajuda" colorType="yellow" /></KanbanColumn>
+                    <KanbanColumn title="Fechado" count="77" sub="Convertido" colorClass="green"><PipelineCard name="Grupo XYZ" company="Holding" value="Valor: 12k" tag="Pago" colorType="green" /></KanbanColumn>
+                  </div>
+                )}
+
+                {/* BOOKER CALENDAR VIEW */}
+                {activeTab === 'calendar' && (
+                  <div className="animate-in fade-in duration-500 flex flex-col h-full shrink-0">
+                    <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white/80 p-4 px-6 rounded-2xl border border-gray-200 shadow-sm backdrop-blur-sm gap-4 shrink-0">
+                       <div className="flex items-center gap-4"><div className="p-2.5 bg-[#4285F4]/10 text-[#4285F4] rounded-xl"><Calendar size={24} /></div><div><h3 className="font-bold text-gray-900 text-lg leading-tight">Agenda Conectada: Google Calendar</h3><p className="text-sm text-gray-500 font-medium">Sincronização bidirecional ativa.</p></div></div>
+                       <div className="flex items-center gap-4"><span className="text-xs font-bold text-green-700 bg-green-100 px-3 py-1.5 rounded-lg flex items-center gap-1 border border-green-200"><CheckCircle2 size={14}/> Sincronizado</span></div>
+                    </div>
+                    <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 shadow-sm p-6 flex-1 flex flex-col shrink-0 min-h-[500px]">
+                       <div className="flex justify-between items-center mb-6 border-b pb-4 shrink-0"><h2 className="font-bold text-xl flex items-center gap-2">Visão Semanal (Espelho)</h2><div className="flex gap-3"><span className="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full"><Bot size={12} /> Booked (IA)</span><span className="flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full"><Users size={12} /> Eventos Pessoais</span></div></div>
+                       <div className="grid grid-cols-5 gap-4 flex-1 overflow-y-auto pr-2">
+                          {['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'].map(day => (
+                            <div key={day} className="flex flex-col gap-3 min-w-[120px]">
+                              <div className="text-center font-bold text-gray-500 uppercase text-xs mb-2 bg-gray-100 py-1.5 rounded-lg">{day}</div>
+                              <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl shadow-sm"><p className="text-xs font-bold text-blue-800">09:00 - Reunião Interna</p><p className="text-[10px] text-blue-600 mt-1">Lido da Agenda</p></div>
+                              <div className="bg-green-50 border border-green-200 p-3 rounded-xl shadow-sm"><p className="text-xs font-bold text-green-800">10:30 - Call LeadFlow</p><p className="text-[10px] text-green-600 mt-1">Agendado pela IA</p></div>
+                              <div className="bg-gray-50 border border-dashed border-gray-300 p-3 rounded-xl text-center"><p className="text-xs text-gray-400">12:00 - Livre</p></div>
+                              <div className="bg-green-50 border border-green-200 p-3 rounded-xl shadow-sm"><p className="text-xs font-bold text-green-800">14:00 - Demo Comercial</p><p className="text-[10px] text-green-600 mt-1">Agendado pela IA</p></div>
+                            </div>
+                          ))}
+                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* INBOX (Mirroring - Vendas+, Lead Flow & Booker) */}
+                {activeTab === 'inbox' && (
+                  <div className="animate-in fade-in duration-500 flex h-[calc(100vh-320px)] min-h-[500px] bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 overflow-hidden shadow-sm shrink-0">
+                    <div className="w-1/3 border-r border-gray-200 flex flex-col bg-gray-50/50 overflow-hidden shrink-0">
+                      <div className="p-4 border-b border-gray-200 bg-white shrink-0">
+                        <div className="relative mb-3"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" placeholder="Buscar nas conversas..." className="w-full pl-9 pr-4 py-2 bg-gray-100 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#c6f432]" /></div>
+                      </div>
+                      <div className="overflow-y-auto flex-1">
+                        <ChatItem name="Marcelo Tech" time="Agora" msg="Manda o link pra pagar!" intent="compra" active />
+                        <ChatItem name="Juliana Freitas" time="2m" msg="Achei meio caro..." intent="objecao" />
+                        <ChatItem name="Clínica Vida" time="15m" msg="Como funciona o sistema?" intent="interesse" />
+                      </div>
+                    </div>
+                    <div className="flex-1 flex flex-col h-full overflow-hidden shrink-0">
+                      <div className="h-16 border-b border-gray-200 bg-white flex items-center justify-between px-6 shrink-0">
+                        <div><h3 className="font-bold text-gray-900">{currentAgent.name} Mirror</h3><p className="text-xs text-green-600 font-medium shrink-0">Espelhando canal de WhatsApp</p></div>
+                        <div className="flex items-center gap-2 bg-green-100 text-green-700 px-3 py-1.5 rounded-lg border border-green-200 shrink-0"><Target size={14} /><span className="text-xs font-bold uppercase">Intenção Detectada</span></div>
+                      </div>
+                      <div className="flex-1 p-6 overflow-y-auto bg-gray-50/50 space-y-4 font-medium text-sm">
+                        <div className="flex gap-4"><div className="w-8 h-8 rounded-full bg-gray-300 shrink-0"></div><div className="bg-white border p-3 rounded-2xl shadow-sm">Olá! Tenho interesse em saber como a IA pode ajudar minha empresa.</div></div>
+                        <div className="flex gap-4 flex-row-reverse"><div className="w-8 h-8 rounded-full bg-[#c6f432] flex items-center justify-center text-xs font-bold text-black shrink-0">IA</div><div className="bg-gray-900 text-white p-3 rounded-2xl shadow-sm">Olá! No seu caso, o agente {currentAgent.name} consegue automatizar todo o seu fluxo operacional. Quer que eu apresente os planos?</div></div>
+                        <div className="flex gap-4"><div className="w-8 h-8 rounded-full bg-gray-300 shrink-0"></div><div className="bg-green-50 border border-green-200 p-3 rounded-2xl shadow-sm">Gostei bastante. Manda o link para eu fechar agora!</div></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* FATURAS */}
+                {activeTab === 'faturas' && (
+                  <div className="animate-in fade-in duration-500 bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 shadow-sm overflow-hidden shrink-0">
+                    <div className="p-6 border-b border-gray-200 shrink-0"><h2 className="font-bold text-lg">Histórico de Pagamentos</h2></div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider text-[11px]"><tr><th className="px-6 py-4">Lead</th><th className="px-6 py-4">Data</th><th className="px-6 py-4">Valor</th><th className="px-6 py-4">Gateway</th><th className="px-6 py-4">Status</th></tr></thead>
+                        <tbody className="divide-y divide-gray-100 font-medium text-gray-700">
+                          <InvoiceRow name="Marcelo Tech" date="Hoje, 14:30" val="R$ 1.500" gw="Asaas" status="Pendente" />
+                          <InvoiceRow name="Grupo XYZ" date="Ontem, 09:15" val="R$ 12.000" gw="Stripe" status="Pago" />
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* SETTINGS CONTENT */}
+                {activeTab === 'settings' && (
+                  <div className="space-y-8 animate-in fade-in duration-500 shrink-0">
+                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div className="space-y-8">
+                           <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-8 shadow-sm border border-gray-200 shrink-0">
+                              <div className="flex items-center gap-3 mb-6 shrink-0"><div className="p-2.5 bg-green-100 text-green-700 rounded-lg"><Smartphone size={20} /></div><h2 className="text-xl font-bold text-gray-900">Canais Operacionais</h2></div>
+                              {whatsappNumbers.map((num, idx) => (
+                                <div key={idx} className="mb-3 shrink-0">
+                                  <input type="text" value={num} onChange={(e) => handleWhatsappChange(idx, e.target.value)} className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:border-[#658210] font-medium" />
+                                </div>
+                              ))}
+                              <button onClick={handleAddWhatsapp} className="flex items-center gap-2 text-sm font-bold text-[#658210] hover:text-black transition-colors shrink-0 mt-2"><Plus size={16} /> Adicionar novo canal</button>
+                           </div>
+
+                           <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-8 shadow-sm border border-gray-200 flex flex-col shrink-0">
+                              <div className="flex items-center gap-3 mb-6 shrink-0"><div className="p-2.5 bg-blue-100 text-blue-700 rounded-lg"><MessageSquare size={20} /></div><h2 className="text-xl font-bold text-gray-900">Scripts & Instruções</h2></div>
+                              <textarea className="w-full min-h-[150px] p-4 bg-white border rounded-xl text-sm mb-4 outline-none focus:border-blue-400 font-medium" defaultValue="Você é um assistente sênior da Pixt IA. Atue de forma consultiva."></textarea>
+                              <div className="pt-4 border-t shrink-0">
+                                <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Qtd. Máxima de Linhas</label>
+                                <div className="flex items-center gap-3 shrink-0"><input type="number" defaultValue="3" className="w-24 px-4 py-2 border rounded-xl font-bold outline-none text-center" /><span className="text-xs text-gray-500 font-medium">Recomendado para canais de chat</span></div>
+                              </div>
+                           </div>
+
+                           {/* CONFIGURAÇÃO EXCLUSIVA BOOKER (Lembretes) */}
+                           {currentAgent.id === 'booker' && (
+                             <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-8 shadow-sm border border-gray-200 flex flex-col shrink-0">
+                                <div className="flex items-center gap-3 mb-6 shrink-0"><div className="p-2.5 bg-yellow-100 text-yellow-700 rounded-lg"><Bell size={20} /></div><h2 className="text-xl font-bold text-gray-900">Gestão de Lembretes</h2></div>
+                                <div className="space-y-4">
+                                   <div><label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Qtd. Lembretes</label><input type="number" min="1" max="5" defaultValue="3" className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:border-yellow-400" /></div>
+                                   <div><label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Tempos de Disparo</label><input type="text" defaultValue="24h, 1h, 15m" className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:border-yellow-400" /></div>
+                                </div>
+                             </div>
+                           )}
+                        </div>
+                        
+                        <div className="space-y-8 flex flex-col shrink-0">
+                           <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-8 shadow-sm border border-gray-200 shrink-0">
+                              <div className="flex items-center gap-3 mb-6 shrink-0"><div className="p-2.5 bg-purple-100 text-purple-700 rounded-lg"><FileText size={20} /></div><h2 className="text-xl font-bold text-gray-900">Base de Dados (RAG)</h2></div>
+                              <div className="border-2 border-dashed border-gray-300 rounded-2xl p-6 text-center bg-gray-50/50 hover:bg-gray-50 cursor-pointer shrink-0">
+                                 <UploadCloud size={24} className="mx-auto mb-2 text-gray-400 shrink-0" /><p className="text-sm font-bold">Subir Documentação (PDF)</p>
+                              </div>
+                           </div>
+                           
+                           <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-8 shadow-sm border border-gray-200 flex-1 shrink-0">
+                              <div className="flex items-center gap-3 mb-6 shrink-0"><div className="p-2.5 bg-orange-100 text-orange-700 rounded-lg"><Globe size={20} /></div><h2 className="text-xl font-bold text-gray-900">Presença Digital</h2></div>
+                              <div className="space-y-5 shrink-0">
+                                 <div><label className="flex items-center gap-2 text-xs font-bold text-gray-500 mb-2 uppercase shrink-0"><Globe size={14} /> Site Oficial</label><input type="url" placeholder="https://..." className="w-full px-4 py-3 bg-white border rounded-xl outline-none focus:border-orange-400 font-medium shrink-0" /></div>
+                                 <div><label className="flex items-center gap-2 text-xs font-bold text-gray-500 mb-2 uppercase shrink-0"><Instagram size={14} /> Instagram</label><input type="url" placeholder="https://..." className="w-full px-4 py-3 bg-white border rounded-xl outline-none focus:border-orange-400 font-medium shrink-0" /></div>
+                                 <div><label className="flex items-center gap-2 text-xs font-bold text-gray-500 mb-2 uppercase shrink-0"><Linkedin size={14} /> LinkedIn Business</label><input type="url" placeholder="https://..." className="w-full px-4 py-3 bg-white border rounded-xl outline-none focus:border-orange-400 font-medium shrink-0" /></div>
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+                     <div className="flex justify-end pt-4 shrink-0"><button className="px-8 py-4 rounded-xl font-bold text-black shadow-[0_5px_15px_rgba(198,244,50,0.2)] hover:scale-105 transition-all shrink-0" style={{ backgroundColor: primaryColor }}>Guardar Ajustes Operacionais</button></div>
+                  </div>
+                )}
+                {/* ── REVENUE DASHBOARD ── */}
+                {activeTab === 'revenue' && (
+                  <div className="space-y-8 animate-in fade-in duration-500">
+                    <div className="bg-gray-900 rounded-[2rem] p-8 shadow-2xl relative overflow-hidden border border-gray-800 flex flex-col md:flex-row items-start md:items-center gap-8">
+                      <div className="absolute top-0 right-0 w-72 h-72 blur-[90px] opacity-20 rounded-full translate-x-1/2 -translate-y-1/2" style={{ backgroundColor: primaryColor }}></div>
+                      <div className="relative z-10 flex-1">
+                        <p className="text-gray-400 font-bold uppercase tracking-widest text-xs mb-2 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>MRR — Receita Recorrente Mensal</p>
+                        <h2 className="text-6xl font-black tracking-tighter" style={{ color: primaryColor }}>R$ 47.200</h2>
+                        <p className="text-green-400 text-sm font-medium mt-2 flex items-center gap-1"><ArrowUpRight size={16}/> +18% vs mês anterior</p>
+                      </div>
+                      <div className="relative z-10 grid grid-cols-2 gap-4 bg-black/40 p-6 rounded-2xl border border-white/5">
+                        <div><p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">ARR</p><p className="text-xl font-bold text-white">R$ 566k</p></div>
+                        <div><p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">NRR</p><p className="text-xl font-bold text-white">112%</p></div>
+                        <div><p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Churn</p><p className="text-xl font-bold text-red-400">3,2%</p></div>
+                        <div><p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">LTV</p><p className="text-xl font-bold text-white">R$ 25.900</p></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2"><DollarSign size={14}/> Receita & Crescimento</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <MetricCard label="MRR" value="R$ 47.200" sub="soma contratos ativos/mês" trend="+18%" up />
+                        <MetricCard label="ARR" value="R$ 566.400" sub="MRR × 12" trend="+18%" up />
+                        <MetricCard label="Net Revenue Retention" value="112%" sub="(MRR+expansão-churn)/MRR inicial" trend="+4pp" up />
+                        <MetricCard label="LTV" value="R$ 25.900" sub="ticket × retenção média" trend="+11%" up />
+                        <MetricCard label="CAC" value="R$ 4.800" sub="gasto vendas+mkt / clientes" trend="-7%" up />
+                        <MetricCard label="LTV : CAC" value="5,4×" sub="ideal: acima de 3×" trend="Saudável" up />
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2"><KanbanSquare size={14}/> Pipeline & Vendas</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <MetricCard label="Win Rate" value="38,4%" sub="negócios fechados / total opport." trend="+2pp" up />
+                        <MetricCard label="Ticket Médio" value="R$ 1.973" sub="receita total / contratos fechados" trend="+9%" up />
+                        <MetricCard label="Ciclo de Venda" value="14 dias" sub="média lead → fechamento" trend="-3d" up />
+                        <MetricCard label="Pipeline Velocity" value="R$ 8.240/d" sub="leads×winrate×ticket / ciclo" trend="+22%" up />
+                        <MetricCard label="Leads por Fonte" value="WhatsApp 64%" sub="canal com maior conversão" trend="" />
+                        <MetricCard label="Deals em Stall" value="7" sub="sem atividade há +14 dias" trend="Atenção" warn />
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Users size={14}/> Clientes & Retenção</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <MetricCard label="Churn Rate" value="3,2%" sub="clientes perdidos / total" trend="-0,8pp" up />
+                        <MetricCard label="NPS" value="+62" sub="% promotores - % detratores" trend="+5" up />
+                        <MetricCard label="CSAT por Agente" value="4,7 / 5" sub="nota média de satisfação" trend="+0,2" up />
+                        <MetricCard label="Health Score Médio" value="74/100" sub="engajamento + pagamento + NPS" trend="+6" up />
+                        <MetricCard label="Expansão de Receita" value="R$ 5.400" sub="upsell + cross-sell / mês" trend="+34%" up />
+                        <MetricCard label="Tempo Médio Contrato" value="14 meses" sub="duração média contratos ativos" trend="+1m" up />
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Bot size={14}/> Performance dos Agentes IA</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <MetricCard label="Taxa de Resolução" value="84%" sub="conversas resolvidas / total" trend="+6pp" up />
+                        <MetricCard label="Uptime dos Agentes" value="99,7%" sub="% disponibilidade em produção" trend="Estável" up />
+                        <MetricCard label="Escalações Humanas" value="12%" sub="sessões que precisaram de humano" trend="-4pp" up />
+                        <MetricCard label="Custo por Conversa" value="R$ 0,38" sub="custo API / total de conversas" trend="-12%" up />
+                        <MetricCard label="ROI por Cliente" value="8,2×" sub="economia gerada - custo agente" trend="+1,1×" up />
+                        <MetricCard label="Volume de Sessões" value="3.847/d" sub="total interações/dia todos agentes" trend="+19%" up />
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Clock size={14}/> Time & Operações</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-2 gap-4">
+                        <MetricCard label="Capacidade do Time" value="87%" sub="horas alocadas / disponíveis" trend="Atenção" warn />
+                        <MetricCard label="Margem por Projeto" value="61%" sub="(receita - custo horas) / receita" trend="+3pp" up />
+                        <MetricCard label="Tarefas no Prazo" value="92%" sub="tasks concluídas no prazo / total" trend="+4pp" up />
+                        <MetricCard label="Velocidade de Entrega" value="6,2 dias" sub="dias médios briefing → entrega" trend="-1,4d" up />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── CONTATOS 360° ── */}
+                {activeTab === 'contacts' && (
+                  <div className="space-y-6 animate-in fade-in duration-500">
+                    <div className="flex items-center gap-4">
+                      <div className="relative flex-1 max-w-sm"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" placeholder="Buscar contato, empresa..." className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#c6f432]" /></div>
+                      <select className="px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm outline-none font-medium"><option>Todos os estágios</option><option>lead</option><option>cliente</option><option>churned</option></select>
+                      <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-black text-sm" style={{ backgroundColor: primaryColor }}><Plus size={16}/> Novo Contato</button>
+                    </div>
+                    <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider text-[11px]">
+                            <tr><th className="px-5 py-4">Contato</th><th className="px-5 py-4">Empresa</th><th className="px-5 py-4">Estágio</th><th className="px-5 py-4">Health Score</th><th className="px-5 py-4">Tags</th><th className="px-5 py-4">LTV</th><th className="px-5 py-4">Ações</th></tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            <ContactRow name="Marcelo Henrique" email="marcelo@techcorp.io" company="TechCorp" stage="cliente" health={88} tags={['Upsell','VIP']} ltv="R$ 42k" />
+                            <ContactRow name="Juliana Freitas" email="ju@inovasys.com" company="InovaSys" stage="cliente" health={72} tags={['Risco']} ltv="R$ 18k" />
+                            <ContactRow name="Carlos Mendes" email="carlos@grupo.xyz" company="Grupo XYZ" stage="lead" health={45} tags={['Hot Lead']} ltv="—" />
+                            <ContactRow name="Clínica Vida" email="admin@clinica.vida" company="Clínica Vida" stage="cliente" health={91} tags={['NPS Alto']} ltv="R$ 63k" />
+                            <ContactRow name="Pedro Rocha" email="pedro@log.sa" company="Log S/A" stage="churned" health={22} tags={['Churn']} ltv="R$ 9k" />
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 shadow-sm p-6">
+                      <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><History size={16}/> Histórico de Interações — Marcelo Henrique</h3>
+                      <div className="space-y-3">
+                        {[
+                          { type: 'call', label: 'Ligação', desc: 'Renovação de contrato discutida. Cliente confirmou interesse no plano anual.', time: 'Hoje, 10:30', color: 'bg-blue-100 text-blue-700' },
+                          { type: 'email', label: 'E-mail', desc: 'Proposta comercial enviada com desconto de 15% para pagamento anual.', time: 'Ontem, 14:00', color: 'bg-purple-100 text-purple-700' },
+                          { type: 'whatsapp', label: 'WhatsApp', desc: 'Cliente perguntou sobre integração com ERP. Redirecionado para ExpertAI.', time: '2 dias atrás', color: 'bg-green-100 text-green-700' },
+                          { type: 'meeting', label: 'Reunião', desc: 'Onboarding inicial realizado. NPS coletado: 9/10.', time: '3 sem atrás', color: 'bg-orange-100 text-orange-700' },
+                        ].map((item, i) => (
+                          <div key={i} className="flex items-start gap-4 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                            <span className={`text-[10px] font-bold px-2 py-1 rounded-lg shrink-0 ${item.color}`}>{item.label}</span>
+                            <div className="flex-1"><p className="text-sm font-medium text-gray-800">{item.desc}</p><p className="text-[11px] text-gray-400 mt-1">{item.time}</p></div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── GESTÃO DE TAREFAS ── */}
+                {activeTab === 'tasks' && (
+                  <div className="space-y-6 animate-in fade-in duration-500">
+                    <div className="flex items-center justify-between">
+                      <div className="flex gap-2">
+                        {['Todas','A Fazer','Em Progresso','Revisão','Concluído'].map(s => (
+                          <button key={s} className="px-3 py-1.5 rounded-lg text-xs font-bold border bg-white/80 border-gray-200 hover:border-gray-400 transition-all">{s}</button>
+                        ))}
+                      </div>
+                      <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-black text-sm" style={{ backgroundColor: primaryColor }}><Plus size={16}/> Nova Tarefa</button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {[
+                        { status: 'A Fazer', color: 'border-gray-300 bg-gray-50/50', tasks: [
+                          { title: 'Criar proposta para Grupo XYZ', priority: 'alta', due: 'Amanhã', sub: 3, assignee: 'Ana' },
+                          { title: 'Configurar webhook Evolution API', priority: 'média', due: '16 Mai', sub: 2, assignee: 'Dev' },
+                        ]},
+                        { status: 'Em Progresso', color: 'border-blue-200 bg-blue-50/30', tasks: [
+                          { title: 'Onboarding Clínica Vida — semana 2', priority: 'alta', due: 'Hoje', sub: 5, assignee: 'Maria' },
+                          { title: 'Relatório mensal Maio/2025', priority: 'média', due: '20 Mai', sub: 1, assignee: 'Ana' },
+                        ]},
+                        { status: 'Concluído', color: 'border-green-200 bg-green-50/30', tasks: [
+                          { title: 'Setup agente Vendas+ — TechCorp', priority: 'alta', due: 'Ontem', sub: 4, assignee: 'Dev' },
+                          { title: 'NPS survey disparado', priority: 'baixa', due: '10 Mai', sub: 0, assignee: 'Maria' },
+                        ]},
+                      ].map(col => (
+                        <div key={col.status} className={`rounded-2xl border p-4 ${col.color}`}>
+                          <h3 className="font-bold text-gray-700 mb-4 text-sm uppercase tracking-wide">{col.status} <span className="ml-1 px-1.5 py-0.5 bg-white rounded text-xs">{col.tasks.length}</span></h3>
+                          <div className="space-y-3">
+                            {col.tasks.map((t, i) => (
+                              <div key={i} className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer">
+                                <div className="flex items-start justify-between mb-2">
+                                  <p className="font-semibold text-sm text-gray-900 leading-tight flex-1 mr-2">{t.title}</p>
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${t.priority === 'alta' ? 'bg-red-100 text-red-700' : t.priority === 'média' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>{t.priority.toUpperCase()}</span>
+                                </div>
+                                <div className="flex items-center justify-between text-[11px] text-gray-400">
+                                  <span className="flex items-center gap-1"><Clock size={11}/> {t.due}</span>
+                                  <span className="flex items-center gap-1"><ListChecks size={11}/> {t.sub} sub</span>
+                                  <span className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[9px] font-bold">{t.assignee[0]}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── PERFORMANCE DOS AGENTES ── */}
+                {activeTab === 'agentperf' && (
+                  <div className="space-y-6 animate-in fade-in duration-500">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <StatCard title="Uptime Total" value="99,7%" trend="+0,1%" primaryColor={primaryColor} borderLight={borderLight} cardLight="rgba(255,255,255,0.8)" />
+                      <StatCard title="Taxa de Resolução" value="84%" trend="+6pp" primaryColor={primaryColor} borderLight={borderLight} cardLight="rgba(255,255,255,0.8)" />
+                      <StatCard title="Escalações" value="12%" trend="-4pp" primaryColor={primaryColor} borderLight={borderLight} cardLight="rgba(255,255,255,0.8)" />
+                      <StatCard title="CSAT Médio" value="4,7/5" trend="+0,2" primaryColor={primaryColor} borderLight={borderLight} cardLight="rgba(255,255,255,0.8)" />
+                    </div>
+                    <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                      <div className="p-5 border-b border-gray-100 font-bold text-sm">Performance por Agente</div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                          <thead className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider text-[11px]">
+                            <tr><th className="px-5 py-3">Agente</th><th className="px-5 py-3">Uptime</th><th className="px-5 py-3">Sessões/dia</th><th className="px-5 py-3">Resolução</th><th className="px-5 py-3">CSAT</th><th className="px-5 py-3">Escalações</th><th className="px-5 py-3">ROI</th><th className="px-5 py-3">Custo/Conv.</th></tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 font-medium">
+                            {[
+                              { name: 'Vendas+', icon: '💰', uptime: '99,9%', sessions: '1.243', res: '88%', csat: '4,8', esc: '9%', roi: '9,4×', cost: 'R$0,31' },
+                              { name: 'Lead Flow', icon: '🎯', uptime: '99,5%', sessions: '987', res: '82%', csat: '4,6', esc: '14%', roi: '7,1×', cost: 'R$0,44' },
+                              { name: 'Booker', icon: '📅', uptime: '100%', sessions: '621', res: '91%', csat: '4,9', esc: '6%', roi: '11,2×', cost: 'R$0,28' },
+                              { name: 'ExpertAI', icon: '🤖', uptime: '99,8%', sessions: '744', res: '79%', csat: '4,5', esc: '16%', roi: '6,8×', cost: 'R$0,52' },
+                              { name: 'Custom', icon: '⚡', uptime: '98,9%', sessions: '252', res: '76%', csat: '4,4', esc: '18%', roi: '5,3×', cost: 'R$0,67' },
+                            ].map(a => (
+                              <tr key={a.name} className="hover:bg-gray-50/50 transition-colors">
+                                <td className="px-5 py-4 font-bold">{a.icon} {a.name}</td>
+                                <td className="px-5 py-4 text-green-700 font-bold">{a.uptime}</td>
+                                <td className="px-5 py-4">{a.sessions}</td>
+                                <td className="px-5 py-4"><span className="font-bold">{a.res}</span></td>
+                                <td className="px-5 py-4">{a.csat}</td>
+                                <td className="px-5 py-4"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${parseFloat(a.esc) < 12 ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{a.esc}</span></td>
+                                <td className="px-5 py-4 font-bold" style={{ color: primaryColor }}>{a.roi}</td>
+                                <td className="px-5 py-4 text-gray-500">{a.cost}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── TIME TRACKING ── */}
+                {activeTab === 'timetrack' && (
+                  <div className="space-y-6 animate-in fade-in duration-500">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-white/80 rounded-2xl border border-gray-200 shadow-sm p-6"><p className="text-xs font-bold text-gray-500 uppercase mb-1">Total de Horas (mês)</p><p className="text-3xl font-extrabold">287,5h</p><p className="text-sm text-gray-400 mt-1 font-medium">Meta: 320h</p></div>
+                      <div className="bg-white/80 rounded-2xl border border-gray-200 shadow-sm p-6"><p className="text-xs font-bold text-gray-500 uppercase mb-1">Receita Gerada</p><p className="text-3xl font-extrabold">R$ 34.500</p><p className="text-sm text-gray-400 mt-1 font-medium">Taxa média: R$120/h</p></div>
+                      <div className="bg-white/80 rounded-2xl border border-gray-200 shadow-sm p-6"><p className="text-xs font-bold text-gray-500 uppercase mb-1">Margem do Time</p><p className="text-3xl font-extrabold">61%</p><p className="text-sm text-green-600 mt-1 font-medium flex items-center gap-1"><TrendingUp size={14}/> +3pp vs mês anterior</p></div>
+                    </div>
+                    <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                      <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+                        <span className="font-bold text-sm">Registros de Tempo</span>
+                        <button className="flex items-center gap-2 px-3 py-2 rounded-xl font-bold text-black text-xs" style={{ backgroundColor: primaryColor }}><Plus size={14}/> Registrar</button>
+                      </div>
+                      <table className="w-full text-sm text-left">
+                        <thead className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider text-[11px]"><tr><th className="px-5 py-3">Descrição</th><th className="px-5 py-3">Cliente</th><th className="px-5 py-3">Agente</th><th className="px-5 py-3">Duração</th><th className="px-5 py-3">Taxa/h</th><th className="px-5 py-3">Total</th><th className="px-5 py-3">Data</th></tr></thead>
+                        <tbody className="divide-y divide-gray-100 font-medium">
+                          {[
+                            { desc: 'Setup do agente Vendas+', client: 'TechCorp', agent: 'Vendas+', dur: '4h 30m', rate: 'R$150', total: 'R$675', date: 'Hoje' },
+                            { desc: 'Treinamento RAG + documentação', client: 'Clínica Vida', agent: 'ExpertAI', dur: '3h 00m', rate: 'R$120', total: 'R$360', date: 'Ontem' },
+                            { desc: 'Reunião de estratégia mensal', client: 'InovaSys', agent: '—', dur: '1h 30m', rate: 'R$200', total: 'R$300', date: '13 Mai' },
+                            { desc: 'Configuração Evolution API', client: 'Grupo XYZ', agent: 'Lead Flow', dur: '2h 00m', rate: 'R$150', total: 'R$300', date: '12 Mai' },
+                          ].map((e, i) => (
+                            <tr key={i} className="hover:bg-gray-50/50 transition-colors">
+                              <td className="px-5 py-3 font-semibold">{e.desc}</td>
+                              <td className="px-5 py-3">{e.client}</td>
+                              <td className="px-5 py-3 text-gray-500">{e.agent}</td>
+                              <td className="px-5 py-3 font-bold">{e.dur}</td>
+                              <td className="px-5 py-3 text-gray-500">{e.rate}</td>
+                              <td className="px-5 py-3 font-bold text-gray-900">{e.total}</td>
+                              <td className="px-5 py-3 text-gray-400">{e.date}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── BASE DE CONHECIMENTO ── */}
+                {activeTab === 'knowledge' && (
+                  <div className="space-y-6 animate-in fade-in duration-500">
+                    <div className="flex items-center gap-4">
+                      <div className="relative flex-1 max-w-sm"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" placeholder="Buscar artigos, SOPs..." className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#c6f432]" /></div>
+                      <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-black text-sm" style={{ backgroundColor: primaryColor }}><Plus size={16}/> Novo Artigo</button>
+                    </div>
+                    <div className="flex gap-6 h-[500px]">
+                      <div className="w-48 shrink-0 space-y-1">
+                        {['Todos', 'SOPs', 'Playbooks', 'Onboarding', 'Técnico', 'Geral'].map(c => (
+                          <button key={c} className="w-full text-left px-3 py-2 rounded-xl text-sm font-medium hover:bg-white/80 text-gray-600 hover:text-gray-900 transition-all">{c}</button>
+                        ))}
+                      </div>
+                      <div className="flex-1 space-y-3 overflow-y-auto pr-2">
+                        {[
+                          { cat: 'SOP', title: 'Protocolo de Onboarding de Clientes', desc: 'Passo a passo completo do primeiro contato até o go-live do agente.', updated: 'Hoje', views: 34 },
+                          { cat: 'Playbook', title: 'Playbook de Upsell — Vendas+', desc: 'Scripts e argumentos para migração de plano mensal para anual.', updated: 'Ontem', views: 21 },
+                          { cat: 'Técnico', title: 'Configuração Evolution API v2', desc: 'Como conectar instâncias WhatsApp via webhook e autenticação.', updated: '3 dias', views: 47 },
+                          { cat: 'Onboarding', title: 'Checklist de Entrega — ExpertAI', desc: 'Lista de verificação completa para entrega do agente de suporte.', updated: '1 sem', views: 15 },
+                          { cat: 'Geral', title: 'Política de SLA e Atendimento', desc: 'Tempos de resposta, escalações e responsabilidades do time.', updated: '2 sem', views: 58 },
+                        ].map((a, i) => (
+                          <div key={i} className="bg-white/80 border border-gray-200 rounded-2xl p-5 hover:border-gray-300 hover:shadow-sm transition-all cursor-pointer">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-600 mb-2 inline-block">{a.cat}</span>
+                                <h4 className="font-bold text-gray-900 mb-1">{a.title}</h4>
+                                <p className="text-sm text-gray-500">{a.desc}</p>
+                              </div>
+                              <ChevronRight size={16} className="text-gray-400 shrink-0 mt-1" />
+                            </div>
+                            <div className="flex items-center gap-4 mt-3 text-[11px] text-gray-400 font-medium">
+                              <span>Atualizado: {a.updated}</span>
+                              <span>{a.views} visualizações</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── CONTRATOS & PROPOSTAS ── */}
+                {activeTab === 'contracts' && (
+                  <div className="space-y-6 animate-in fade-in duration-500">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {[{ label: 'Ativos', val: '18', color: 'text-green-700 bg-green-50 border-green-200' }, { label: 'Rascunho', val: '4', color: 'text-yellow-700 bg-yellow-50 border-yellow-200' }, { label: 'Vencendo em 30d', val: '3', color: 'text-orange-700 bg-orange-50 border-orange-200' }, { label: 'Churned', val: '2', color: 'text-red-700 bg-red-50 border-red-200' }].map(c => (
+                        <div key={c.label} className={`rounded-2xl border p-5 ${c.color}`}><p className="text-xs font-bold uppercase tracking-wide mb-1">{c.label}</p><p className="text-3xl font-extrabold">{c.val}</p></div>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex gap-2">
+                        {['Todos', 'Ativos', 'Rascunho', 'Vencendo'].map(s => (
+                          <button key={s} className="px-3 py-1.5 rounded-lg text-xs font-bold border bg-white/80 border-gray-200 hover:border-gray-400 transition-all">{s}</button>
+                        ))}
+                      </div>
+                      <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-black text-sm" style={{ backgroundColor: primaryColor }}><Plus size={16}/> Novo Contrato</button>
+                    </div>
+                    <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                      <table className="w-full text-sm text-left">
+                        <thead className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider text-[11px]"><tr><th className="px-5 py-3">Cliente</th><th className="px-5 py-3">Plano</th><th className="px-5 py-3">Valor/mês</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Início</th><th className="px-5 py-3">Vencimento</th><th className="px-5 py-3">Ações</th></tr></thead>
+                        <tbody className="divide-y divide-gray-100 font-medium">
+                          {[
+                            { client: 'TechCorp', plan: 'Vendas+ Anual', val: 'R$ 1.500', status: 'active', start: 'Jan/25', end: 'Jan/26' },
+                            { client: 'Clínica Vida', plan: 'ExpertAI + Booker', val: 'R$ 3.500', status: 'active', start: 'Mar/25', end: 'Mar/26' },
+                            { client: 'InovaSys', plan: 'Lead Flow', val: 'R$ 2.000', status: 'active', start: 'Abr/25', end: 'Abr/26' },
+                            { client: 'Consultoria XP', plan: 'Vendas+ Mensal', val: 'R$ 1.700', status: 'draft', start: '—', end: '—' },
+                            { client: 'Log S/A', plan: 'Custom IA', val: 'R$ 4.800', status: 'churned', start: 'Fev/25', end: 'Mai/25' },
+                          ].map((c, i) => (
+                            <tr key={i} className="hover:bg-gray-50/50 transition-colors">
+                              <td className="px-5 py-3 font-bold">{c.client}</td>
+                              <td className="px-5 py-3">{c.plan}</td>
+                              <td className="px-5 py-3 font-bold">{c.val}</td>
+                              <td className="px-5 py-3"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${c.status === 'active' ? 'bg-green-100 text-green-700' : c.status === 'draft' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{c.status === 'active' ? 'Ativo' : c.status === 'draft' ? 'Rascunho' : 'Churned'}</span></td>
+                              <td className="px-5 py-3 text-gray-500">{c.start}</td>
+                              <td className="px-5 py-3 text-gray-500">{c.end}</td>
+                              <td className="px-5 py-3"><button className="text-xs font-bold text-gray-400 hover:text-gray-700 transition-colors">Ver</button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── METAS & GAMIFICAÇÃO ── */}
+                {activeTab === 'goals' && (
+                  <div className="space-y-6 animate-in fade-in duration-500">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <h3 className="font-bold text-gray-900 flex items-center gap-2"><Trophy size={18} style={{ color: primaryColor }}/> Metas do Mês — Maio 2025</h3>
+                        {[
+                          { title: 'MRR', current: 47200, target: 55000, unit: 'R$', color: '#c6f432' },
+                          { title: 'Novos Clientes', current: 6, target: 10, unit: 'contratos', color: '#60a5fa' },
+                          { title: 'Churn Rate', current: 3.2, target: 2.5, unit: '%', color: '#f87171', invert: true },
+                          { title: 'NPS', current: 62, target: 70, unit: 'pts', color: '#34d399' },
+                          { title: 'Tarefas no Prazo', current: 92, target: 95, unit: '%', color: '#a78bfa' },
+                        ].map((g, i) => {
+                          const pct = g.invert
+                            ? Math.min(100, Math.round((g.target / g.current) * 100))
+                            : Math.min(100, Math.round((g.current / g.target) * 100));
+                          return (
+                            <div key={i} className="bg-white/80 border border-gray-200 rounded-2xl p-5 shadow-sm">
+                              <div className="flex items-center justify-between mb-3">
+                                <span className="font-bold text-sm text-gray-900">{g.title}</span>
+                                <span className="text-xs font-bold text-gray-500">{typeof g.current === 'number' && g.unit === 'R$' ? `R$ ${g.current.toLocaleString('pt-BR')}` : g.current} / {typeof g.target === 'number' && g.unit === 'R$' ? `R$ ${g.target.toLocaleString('pt-BR')}` : g.target} {g.unit}</span>
+                              </div>
+                              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: g.color }}></div>
+                              </div>
+                              <p className="text-[11px] text-gray-400 mt-1.5 font-medium">{pct}% da meta atingida</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="space-y-4">
+                        <h3 className="font-bold text-gray-900 flex items-center gap-2"><Award size={18} className="text-yellow-500"/> Ranking da Equipe — Maio</h3>
+                        <div className="bg-white/80 border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+                          {[
+                            { pos: 1, name: 'Ana Beatriz', pts: 2840, badge: '🥇', trend: '+180' },
+                            { pos: 2, name: 'Carlos Dev', pts: 2310, badge: '🥈', trend: '+95' },
+                            { pos: 3, name: 'Maria Silva', pts: 1975, badge: '🥉', trend: '+210' },
+                            { pos: 4, name: 'João Rocha', pts: 1520, badge: '4°', trend: '+60' },
+                          ].map((p, i) => (
+                            <div key={i} className={`flex items-center justify-between px-5 py-4 ${i === 0 ? 'bg-yellow-50 border-b-2 border-yellow-200' : 'border-b border-gray-100'}`}>
+                              <div className="flex items-center gap-4">
+                                <span className="text-lg font-bold w-8 text-center">{p.badge}</span>
+                                <span className="font-bold text-gray-900">{p.name}</span>
+                              </div>
+                              <div className="flex items-center gap-4">
+                                <span className="text-xs text-green-600 font-bold">+{p.trend}pts</span>
+                                <span className="font-extrabold text-gray-900">{p.pts.toLocaleString('pt-BR')} pts</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="bg-white/80 border border-gray-200 rounded-2xl p-5 shadow-sm">
+                          <h4 className="font-bold text-sm text-gray-900 mb-3">Badges Conquistados</h4>
+                          <div className="flex flex-wrap gap-2">
+                            {['🔥 Streak 7d', '⚡ Fechamento Rápido', '💬 Top Conversas', '🎯 Win Rate 40%+', '📈 MRR Record'].map(b => (
+                              <span key={b} className="text-xs font-bold px-3 py-1.5 bg-gray-100 rounded-full text-gray-700">{b}</span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── COMUNICAÇÃO INTERNA ── */}
+                {activeTab === 'chat' && (
+                  <div className="animate-in fade-in duration-500 flex h-[calc(100vh-320px)] min-h-[500px] bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+                    <div className="w-64 border-r border-gray-200 flex flex-col bg-gray-50/50 shrink-0">
+                      <div className="p-4 border-b border-gray-100 font-bold text-sm">Canais & DMs</div>
+                      <div className="overflow-y-auto flex-1 p-2 space-y-1">
+                        {[{ name: '#geral', unread: 3 }, { name: '#vendas-time', unread: 0 }, { name: '#clientes-vip', unread: 1 }, { name: '#dev-ops', unread: 0 }, { name: 'Ana Beatriz', unread: 2, dm: true }, { name: 'Carlos Dev', unread: 0, dm: true }].map((c, i) => (
+                          <button key={i} className={`w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium flex items-center justify-between transition-all ${i === 0 ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:bg-white/60 hover:text-gray-900'}`}>
+                            <span>{c.dm ? '👤 ' : '# '}{c.name.replace('#', '')}</span>
+                            {c.unread > 0 && <span className="w-5 h-5 rounded-full bg-[#c6f432] text-black text-[10px] font-extrabold flex items-center justify-center">{c.unread}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex-1 flex flex-col">
+                      <div className="h-14 border-b border-gray-200 bg-white flex items-center px-6 font-bold text-gray-900 shrink-0"># geral <span className="ml-2 text-xs font-medium text-gray-400">4 membros</span></div>
+                      <div className="flex-1 p-5 overflow-y-auto space-y-4 bg-gray-50/30">
+                        {[{ user: 'Ana Beatriz', msg: 'Fechei o contrato com a Clínica Vida! 🎉 Plano ExpertAI + Booker por 12 meses.', time: '10:42' }, { user: 'Carlos Dev', msg: 'Parabéns Ana! Vai ficar no pipeline Maio então?', time: '10:44' }, { user: 'Maria Silva', msg: 'Agente configurado e testado. Prontos para onboarding na Quinta.', time: '10:51' }, { user: 'João Rocha', msg: '@todos — Reunião de pipeline às 15h hoje. Pautar os 7 deals em stall.', time: '11:03' }].map((m, i) => (
+                          <div key={i} className="flex items-start gap-3">
+                            <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold shrink-0">{m.user[0]}</div>
+                            <div><p className="text-sm font-bold text-gray-900 mb-0.5">{m.user} <span className="text-[11px] font-normal text-gray-400">{m.time}</span></p><p className="text-sm text-gray-700">{m.msg}</p></div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="p-4 border-t border-gray-200 bg-white shrink-0">
+                        <div className="flex items-center gap-3 bg-gray-100 rounded-xl px-4 py-3">
+                          <input type="text" placeholder="Mensagem para #geral..." className="flex-1 bg-transparent text-sm outline-none" />
+                          <button className="px-3 py-1.5 rounded-lg text-xs font-bold text-black" style={{ backgroundColor: primaryColor }}>Enviar</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── FORECASTING IA ── */}
+                {activeTab === 'forecast' && (
+                  <div className="space-y-6 animate-in fade-in duration-500">
+                    <div className="bg-gray-900 rounded-[2rem] p-8 border border-gray-800 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-64 h-64 blur-[80px] opacity-20 rounded-full translate-x-1/2 -translate-y-1/2" style={{ backgroundColor: primaryColor }}></div>
+                      <div className="relative z-10 flex items-start justify-between">
+                        <div><p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-2 flex items-center gap-2"><Brain size={14} style={{ color: primaryColor }}/> Previsão de Receita — Junho 2025</p><h2 className="text-5xl font-black" style={{ color: primaryColor }}>R$ 52.800</h2><p className="text-gray-400 text-sm mt-2">Intervalo de confiança: R$49k — R$56k (confiança 78%)</p></div>
+                        <span className="px-4 py-2 rounded-xl bg-green-900/50 text-green-400 text-sm font-bold border border-green-800">+11,9% vs Maio</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-white/80 border border-gray-200 rounded-2xl p-5 shadow-sm">
+                        <h4 className="font-bold text-sm text-gray-900 mb-3 flex items-center gap-2"><AlertOctagon size={14} className="text-red-500"/> Risco de Churn</h4>
+                        <div className="space-y-3">
+                          {[{ name: 'InovaSys', risk: 'Alto', pct: 72, color: 'bg-red-100 text-red-700' }, { name: 'Log S/A', risk: 'Alto', pct: 85, color: 'bg-red-100 text-red-700' }, { name: 'Consultoria XP', risk: 'Médio', pct: 41, color: 'bg-yellow-100 text-yellow-700' }].map((c, i) => (
+                            <div key={i} className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-gray-700">{c.name}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${c.color}`}>{c.risk} {c.pct}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="bg-white/80 border border-gray-200 rounded-2xl p-5 shadow-sm">
+                        <h4 className="font-bold text-sm text-gray-900 mb-3 flex items-center gap-2"><Sparkles size={14} className="text-purple-500"/> Oportunidades Previstas</h4>
+                        <div className="space-y-3">
+                          {[{ deal: 'Upsell TechCorp', val: 'R$ 800/mês', prob: '89%', color: 'text-green-600' }, { deal: 'Upsell Clínica Vida', val: 'R$ 500/mês', prob: '74%', color: 'text-green-600' }, { deal: 'Novo cliente inbound', val: 'R$ 1.500', prob: '55%', color: 'text-yellow-600' }].map((o, i) => (
+                            <div key={i} className="flex items-center justify-between">
+                              <div><p className="text-sm font-medium text-gray-700">{o.deal}</p><p className="text-xs text-gray-400">{o.val}</p></div>
+                              <span className={`text-sm font-bold ${o.color}`}>{o.prob}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="bg-white/80 border border-gray-200 rounded-2xl p-5 shadow-sm">
+                        <h4 className="font-bold text-sm text-gray-900 mb-3 flex items-center gap-2"><LineChart size={14} style={{ color: primaryColor }}/> Pipeline em 60 dias</h4>
+                        <div className="space-y-2">
+                          {[{ label: 'Jun/25', val: 'R$ 52.800', pct: 95 }, { label: 'Jul/25', val: 'R$ 58.400', pct: 78 }, { label: 'Ago/25', val: 'R$ 63.100', pct: 62 }].map((p, i) => (
+                            <div key={i}>
+                              <div className="flex justify-between text-xs font-medium mb-1"><span className="text-gray-500">{p.label}</span><span className="font-bold">{p.val}</span></div>
+                              <div className="h-2 bg-gray-100 rounded-full"><div className="h-full rounded-full" style={{ width: `${p.pct}%`, backgroundColor: primaryColor, opacity: 1 - i * 0.2 }}></div></div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── LEAD SCORING ── */}
+                {activeTab === 'leadscore' && (
+                  <div className="space-y-6 animate-in fade-in duration-500">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-gray-500 font-medium">IA pontua leads por comportamento, perfil e engajamento em tempo real.</p>
+                      <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-black text-sm border border-gray-200 bg-white/80" style={{ backgroundColor: primaryColor }}><RefreshCw size={14}/> Recalcular</button>
+                    </div>
+                    <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                      <table className="w-full text-sm text-left">
+                        <thead className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider text-[11px]"><tr><th className="px-5 py-3">Rank</th><th className="px-5 py-3">Lead</th><th className="px-5 py-3">Empresa</th><th className="px-5 py-3">Score</th><th className="px-5 py-3">Temperatura</th><th className="px-5 py-3">Perfil</th><th className="px-5 py-3">Engajamento</th><th className="px-5 py-3">Estágio</th></tr></thead>
+                        <tbody className="divide-y divide-gray-100 font-medium">
+                          {[
+                            { rank: 1, name: 'Marcelo Henrique', company: 'TechCorp', score: 94, temp: '🔥 Quente', perfil: 'ICP Perfeito', eng: 'Alto', stage: 'Em Atendimento' },
+                            { rank: 2, name: 'Juliana Freitas', company: 'InovaSys', score: 81, temp: '🌡️ Morno', perfil: 'ICP Parcial', eng: 'Médio', stage: 'Novos' },
+                            { rank: 3, name: 'Clínica Vida', company: 'Grupo Saúde', score: 77, temp: '🌡️ Morno', perfil: 'ICP Perfeito', eng: 'Alto', stage: 'Humano' },
+                            { rank: 4, name: 'Carlos Mendes', company: 'Log S/A', score: 58, temp: '❄️ Frio', perfil: 'ICP Parcial', eng: 'Baixo', stage: 'Sem Resposta' },
+                            { rank: 5, name: 'Pedro Rocha', company: 'Consultoria XP', score: 41, temp: '❄️ Frio', perfil: 'Fora ICP', eng: 'Muito Baixo', stage: 'Sem Resposta' },
+                          ].map((l, i) => (
+                            <tr key={i} className="hover:bg-gray-50/50 transition-colors">
+                              <td className="px-5 py-4 font-extrabold text-gray-400">#{l.rank}</td>
+                              <td className="px-5 py-4 font-bold text-gray-900">{l.name}</td>
+                              <td className="px-5 py-4 text-gray-500">{l.company}</td>
+                              <td className="px-5 py-4">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-16 h-2 bg-gray-100 rounded-full"><div className="h-full rounded-full" style={{ width: `${l.score}%`, backgroundColor: l.score > 75 ? '#c6f432' : l.score > 50 ? '#fbbf24' : '#f87171' }}></div></div>
+                                  <span className="font-extrabold">{l.score}</span>
+                                </div>
+                              </td>
+                              <td className="px-5 py-4">{l.temp}</td>
+                              <td className="px-5 py-4"><span className={`text-[10px] font-bold px-2 py-0.5 rounded ${l.perfil === 'ICP Perfeito' ? 'bg-green-100 text-green-700' : l.perfil === 'ICP Parcial' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{l.perfil}</span></td>
+                              <td className="px-5 py-4"><span className={`text-[10px] font-bold px-2 py-0.5 rounded ${l.eng === 'Alto' ? 'bg-green-100 text-green-700' : l.eng === 'Médio' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{l.eng}</span></td>
+                              <td className="px-5 py-4 text-gray-500">{l.stage}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── RELATÓRIOS AUTOMÁTICOS ── */}
+                {activeTab === 'reports' && (
+                  <div className="space-y-6 animate-in fade-in duration-500">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-gray-500 font-medium">Relatórios gerados automaticamente por cliente, período e agente.</p>
+                      <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-black text-sm" style={{ backgroundColor: primaryColor }}><Plus size={16}/> Novo Relatório</button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {[
+                        { title: 'Relatório Mensal — TechCorp', type: 'Cliente', period: 'Abril/25', status: 'Enviado', desc: 'Performance Vendas+, conversas, leads fechados, ROI do agente.', color: 'bg-green-100 text-green-700' },
+                        { title: 'Relatório Mensal — Clínica Vida', type: 'Cliente', period: 'Abril/25', status: 'Enviado', desc: 'Performance ExpertAI + Booker, agendamentos, resoluções.', color: 'bg-green-100 text-green-700' },
+                        { title: 'Performance Geral — Maio/25', type: 'Interno', period: 'Maio/25', status: 'Gerando...', desc: 'Dashboard consolidado: MRR, Churn, NPS, todos os agentes.', color: 'bg-yellow-100 text-yellow-700' },
+                        { title: 'Relatório de Pipeline — Q2', type: 'Interno', period: 'Abr-Jun/25', status: 'Agendado', desc: 'Win rate, ticket médio, ciclo de venda, stalled deals por agente.', color: 'bg-blue-100 text-blue-700' },
+                        { title: 'Relatório Mensal — InovaSys', type: 'Cliente', period: 'Maio/25', status: 'Agendado', desc: 'CRM, conversas, lead scoring e recomendações de melhoria.', color: 'bg-blue-100 text-blue-700' },
+                        { title: 'NPS & Satisfação — Q2', type: 'Interno', period: 'Abr-Jun/25', status: 'Agendado', desc: 'CSAT por agente, NPS por cliente, escalações e resolução.', color: 'bg-blue-100 text-blue-700' },
+                      ].map((r, i) => (
+                        <div key={i} className="bg-white/80 border border-gray-200 rounded-2xl p-5 hover:border-gray-300 hover:shadow-sm transition-all shadow-sm">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-600">{r.type}</span>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${r.color}`}>{r.status}</span>
+                              </div>
+                              <h4 className="font-bold text-gray-900">{r.title}</h4>
+                            </div>
+                            <span className="text-xs text-gray-400 font-medium shrink-0 ml-2">{r.period}</span>
+                          </div>
+                          <p className="text-sm text-gray-500 mb-4">{r.desc}</p>
+                          <div className="flex gap-2">
+                            <button className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition-all">Visualizar</button>
+                            <button className="text-xs font-bold px-3 py-1.5 rounded-lg text-black transition-all" style={{ backgroundColor: primaryColor }}>Exportar PDF</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            </div>
+          </main>
+        </div>
+      );
+    };
+
+    const NavItem = ({ icon, label, isActive, onClick, primaryColor }) => (
+      <button onClick={onClick} className={`w-full flex items-center px-4 py-3 rounded-xl transition-all duration-200 group relative overflow-hidden shrink-0 ${isActive ? 'text-black font-bold shadow-sm' : 'text-gray-500 hover:text-gray-900 hover:bg-white/50'}`} style={{ backgroundColor: isActive ? primaryColor : 'transparent' }}>
+        <span className={`mr-3 z-10 ${isActive ? 'text-black' : 'text-gray-400'}`}>{icon}</span><span className="text-sm z-10">{label}</span>
+      </button>
+    );
+
+    const StatCard = ({ title, value, trend, isStatus, cardLight, borderLight, primaryColor }) => (
+      <div className="p-6 rounded-2xl border relative overflow-hidden shadow-sm backdrop-blur-sm shrink-0" style={{ backgroundColor: cardLight, borderColor: borderLight }}>
+        <div className="absolute top-0 right-0 w-24 h-24 blur-3xl opacity-30 rounded-full translate-x-1/2 -translate-y-1/2" style={{ backgroundColor: primaryColor }}></div>
+        <p className="text-xs font-bold text-gray-500 uppercase mb-2 shrink-0">{title}</p>
+        <div className="flex items-end justify-between shrink-0"><h3 className="text-3xl font-extrabold text-gray-900 shrink-0">{value}</h3>
+          {isStatus ? (<span className="text-xs font-bold text-green-700 bg-green-100 px-2.5 py-1 rounded-md flex items-center gap-1 shrink-0"><div className="w-1.5 h-1.5 rounded-full bg-green-600 shrink-0"></div> {trend}</span>) : (<span className="text-sm font-bold text-gray-500 shrink-0">{trend}</span>)}
+        </div>
+      </div>
+    );
+
+    const KanbanColumn = ({ title, count, sub, children, colorClass }) => {
+      const colors = { gray: 'bg-gray-100/50 border-gray-200', blue: 'bg-blue-50/50 border-blue-100', slate: 'bg-slate-100/50 border-slate-200', yellow: 'bg-yellow-50/50 border-yellow-200', orange: 'bg-orange-50/50 border-orange-100', green: 'bg-green-50/50 border-green-100', red: 'bg-red-50/50 border-red-100' };
+      return (
+        <div className={`flex-none w-72 rounded-2xl flex flex-col border backdrop-blur-sm ${colors[colorClass]} h-full overflow-hidden shrink-0`}>
+          <div className="p-4 border-b border-black/5 shrink-0"><div className="flex justify-between items-center mb-1 shrink-0"><h3 className="font-bold text-gray-800 shrink-0">{title}</h3><span className="text-xs font-bold px-2 py-1 rounded bg-white/50 shrink-0">{count}</span></div><p className="text-xs opacity-70 font-medium shrink-0">{sub}</p></div>
+          <div className="p-3 space-y-3 overflow-y-auto flex-1">{children}</div>
+        </div>
+      );
+    };
+
+    const PipelineCard = ({ name, company, value, tag, colorType }) => {
+      const badge = { blue: 'bg-blue-100 text-blue-700', orange: 'bg-orange-100 text-orange-700', green: 'bg-green-100 text-green-700', red: 'bg-red-100 text-red-700', yellow: 'bg-yellow-100 text-yellow-700', default: 'bg-gray-100 text-gray-600' };
+      return (
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:border-gray-300 transition-all cursor-grab active:cursor-grabbing shrink-0">
+          <div className="flex justify-between items-start mb-3 shrink-0"><div><p className="font-bold text-sm leading-tight text-gray-900 shrink-0">{name}</p><p className="text-[10px] text-gray-400 font-medium mt-0.5 shrink-0">{company}</p></div><span className="text-xs font-bold text-gray-900 shrink-0">{value}</span></div>
+          <div className={`inline-block px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shrink-0 ${badge[colorType] || badge.default}`}>{tag}</div>
+        </div>
+      );
+    };
+
+    const ChatItem = ({ name, time, msg, intent, active }) => (
+      <div className={`p-4 border-b border-gray-100 cursor-pointer transition-colors shrink-0 ${active ? 'bg-white border-l-4 border-l-[#c6f432]' : 'hover:bg-gray-100/50'}`}>
+        <div className="flex justify-between items-center mb-1 shrink-0"><p className="font-bold text-sm text-gray-900 shrink-0">{name}</p><span className="text-[10px] text-gray-400 shrink-0">{time}</span></div><p className="text-xs text-gray-500 truncate mb-2 shrink-0">{msg}</p>
+        <div className="flex gap-2 shrink-0">
+           {intent === 'compra' && <span className="text-[9px] bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded flex items-center gap-1 shrink-0"><Target size={10}/> Compra</span>}
+           {intent === 'objecao' && <span className="text-[9px] bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded flex items-center gap-1 shrink-0"><AlertTriangle size={10}/> Objeção</span>}
+           {intent === 'interesse' && <span className="text-[9px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded flex items-center gap-1 shrink-0"><Star size={10}/> Interesse</span>}
+        </div>
+      </div>
+    );
+
+    const InvoiceRow = ({ name, date, val, gw, status }) => (
+      <tr className="hover:bg-gray-50/50 transition-colors shrink-0">
+        <td className="px-6 py-4 text-sm font-bold text-gray-900 shrink-0">{name}</td>
+        <td className="px-6 py-4 text-xs text-gray-500 shrink-0">{date}</td>
+        <td className="px-6 py-4 text-sm font-bold text-gray-900 shrink-0">{val}</td>
+        <td className="px-6 py-4 text-xs text-gray-500 font-medium shrink-0">{gw}</td>
+        <td className="px-6 py-4 shrink-0"><span className={`inline-flex px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider shrink-0 ${status === 'Pago' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{status}</span></td>
+      </tr>
+    );
+
+    const MetricCard = ({ label, value, sub, trend, up, warn }) => (
+      <div className="bg-white/80 backdrop-blur-sm border border-gray-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all">
+        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{label}</p>
+        <p className="text-2xl font-extrabold text-gray-900 mb-1">{value}</p>
+        <p className="text-[11px] text-gray-400 font-medium mb-2 leading-tight">{sub}</p>
+        {trend && (
+          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+            warn ? 'bg-yellow-100 text-yellow-700' :
+            up ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+          }`}>
+            {up && !warn && <ArrowUpRight size={10}/>}
+            {warn && <AlertTriangle size={10}/>}
+            {trend}
+          </span>
+        )}
+      </div>
+    );
+
+    const ContactRow = ({ name, email, company, stage, health, tags, ltv }) => (
+      <tr className="hover:bg-gray-50/50 transition-colors cursor-pointer">
+        <td className="px-5 py-3">
+          <div className="font-bold text-gray-900 text-sm">{name}</div>
+          <div className="text-[11px] text-gray-400">{email}</div>
+        </td>
+        <td className="px-5 py-3 text-sm text-gray-600 font-medium">{company}</td>
+        <td className="px-5 py-3">
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${stage === 'cliente' ? 'bg-green-100 text-green-700' : stage === 'lead' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>{stage}</span>
+        </td>
+        <td className="px-5 py-3">
+          <div className="flex items-center gap-2">
+            <div className="w-16 h-1.5 bg-gray-100 rounded-full"><div className="h-full rounded-full" style={{ width: `${health}%`, backgroundColor: health > 70 ? '#22c55e' : health > 40 ? '#f59e0b' : '#ef4444' }}></div></div>
+            <span className="text-xs font-bold text-gray-700">{health}</span>
+          </div>
+        </td>
+        <td className="px-5 py-3">
+          <div className="flex gap-1 flex-wrap">
+            {tags.map(t => <span key={t} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{t}</span>)}
+          </div>
+        </td>
+        <td className="px-5 py-3 font-bold text-sm text-gray-900">{ltv}</td>
+        <td className="px-5 py-3"><button className="text-xs font-bold text-gray-400 hover:text-gray-700 transition-colors">Ver</button></td>
+      </tr>
+    );
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
