@@ -36,13 +36,15 @@
   <script type="text/babel" data-type="module">
     import React, { useState, useEffect, useRef, useCallback, createContext, useContext } from 'https://esm.sh/react@18.2.0';
     import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
+    import { createPortal } from 'https://esm.sh/react-dom@18.2.0';
     import {
       LayoutDashboard, Users, Database, Settings, Play, Clock, DollarSign, Calendar, Cpu, LogOut,
       CreditCard, KanbanSquare, Bot, Zap, ArrowRight, Mail, Lock, AlertCircle, Plus, UploadCloud,
       FileText, Smartphone, Globe, Instagram, Linkedin, Power, MessageSquare, Inbox, TrendingUp,
       Target, CheckCircle2, AlertTriangle, Receipt, Search, Filter, Star, Activity, Ticket,
       Workflow, History, CheckCircle, BarChart3, Bell, Send, Trash2, Edit3, X, Loader2, RefreshCw,
-      ChevronDown, UserPlus, Save, FileWarning, FileCheck2, MapPin, TrendingDown
+      ChevronDown, ChevronLeft, ChevronRight, UserPlus, Save, FileWarning, FileCheck2, MapPin, TrendingDown,
+      BookOpen, Moon, Sun, Move, Link, Unlink, ZoomIn, ZoomOut, Maximize2
     } from 'https://esm.sh/lucide-react@0.292.0';
 
 
@@ -50,10 +52,16 @@
        API CLIENT
        ========================================================= */
     const API_BASE = (() => {
-      // Servido pelo próprio backend em :3001 → relativo
+      const proto = window.location.protocol;
+      const host = window.location.hostname;
       const port = window.location.port;
+      // Produção (Vercel ou qualquer host real) → /api relativo, mesmo domínio
+      if (proto === 'https:' || (host && host !== 'localhost' && host !== '127.0.0.1' && proto !== 'file:')) {
+        return '/api';
+      }
+      // Servido pelo próprio backend em :3001 → relativo
       if (port === '3001') return '/api';
-      // Aberto via file:// ou outra porta → fala direto com :3001
+      // Aberto via file:// ou outra porta em dev → fala direto com :3001 local
       return 'http://localhost:3001/api';
     })();
 
@@ -416,7 +424,7 @@
           <div className="relative z-10 w-full flex flex-col md:flex-row flex-1 pointer-events-none">
             <div className="hidden md:flex w-1/2 flex-col p-12 overflow-hidden pointer-events-auto text-gray-900">
               <div className="flex items-center space-x-3 mb-8">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-sm" style={{ backgroundColor: primaryColor }}><Zap size={22} className="text-black" fill="currentColor" /></div>
+                <img src="/pixt perfil.png" alt="Pixt IA" className="w-12 h-12 rounded-xl object-cover shadow-sm" />
                 <h1 className="text-4xl font-extrabold tracking-tight">Pixt <span style={{ color: primaryColor }}>IA</span></h1>
               </div>
               <div className="mb-6 bg-white/70 backdrop-blur-md p-5 rounded-2xl border border-white max-w-sm shadow-sm">
@@ -1554,6 +1562,50 @@
       const [selectedLead, setSelectedLead] = useState(null);
       const toast = useToast();
 
+      /* ── Calendar date filter ── */
+      const [showAdminPipeCal, setShowAdminPipeCal] = useState(false);
+      const [adminPipeCalMonth, setAdminPipeCalMonth] = useState(() => { const d = new Date(); d.setDate(1); return d; });
+      const [adminPipeFrom, setAdminPipeFrom] = useState(null);
+      const [adminPipeTo, setAdminPipeTo] = useState(null);
+      const adminPipeCalRef = useRef(null);
+
+      useEffect(() => {
+        const h = (e) => { if (adminPipeCalRef.current && !adminPipeCalRef.current.contains(e.target)) setShowAdminPipeCal(false); };
+        document.addEventListener('mousedown', h);
+        return () => document.removeEventListener('mousedown', h);
+      }, []);
+
+      const fmtAPD = d => d ? d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '--';
+      const adminPipeDays = (() => {
+        const yr=adminPipeCalMonth.getFullYear(), mo=adminPipeCalMonth.getMonth();
+        const first=new Date(yr,mo,1), last=new Date(yr,mo+1,0);
+        const days=[];
+        for(let i=0;i<first.getDay();i++) days.push(null);
+        for(let d=1;d<=last.getDate();d++) days.push(new Date(yr,mo,d));
+        return days;
+      })();
+      const handleAdminPipeDay = (day) => {
+        if(!day) return;
+        if(!adminPipeFrom||(adminPipeFrom&&adminPipeTo)){setAdminPipeFrom(day);setAdminPipeTo(null);}
+        else{if(day<adminPipeFrom){setAdminPipeTo(adminPipeFrom);setAdminPipeFrom(day);}else{setAdminPipeTo(day);}setShowAdminPipeCal(false);}
+      };
+      const isAdminDayInRange=(day)=>{
+        if(!day||!adminPipeFrom) return false;
+        if(!adminPipeTo) return day.toDateString()===adminPipeFrom.toDateString();
+        return day>=adminPipeFrom&&day<=adminPipeTo;
+      };
+      const clearAdminPipeCal=()=>{setAdminPipeFrom(null);setAdminPipeTo(null);};
+      const filterAdminLeadsByDate=(list)=>{
+        if(!adminPipeFrom) return list;
+        return list.filter(l=>{
+          const d=l.created_at?new Date(l.created_at):null;
+          if(!d) return true;
+          const day=new Date(d.getFullYear(),d.getMonth(),d.getDate());
+          if(!adminPipeTo) return day.toDateString()===adminPipeFrom.toDateString();
+          return day>=adminPipeFrom&&day<=adminPipeTo;
+        });
+      };
+
       const [pipelines, setPipelines] = useState(() => {
         try { return JSON.parse(localStorage.getItem('pixt_pipelines') || 'null') || [DEFAULT_PIPELINE]; } catch { return [DEFAULT_PIPELINE]; }
       });
@@ -1574,11 +1626,12 @@
       const agentLabel = { vendas:'Vendas+', leadflow:'Lead Flow', booker:'Booker', 'pixt-bdr':'PIXT BDR', custom:'Custom' };
       const agents = [...new Set(leads.map(l => l.agent_slug))];
       const filtered = agentFilter ? leads.filter(l => l.agent_slug === agentFilter) : leads;
-      const totalLeads = filtered.length || 1;
+      const dateFiltered = filterAdminLeadsByDate(filtered);
+      const totalLeads = dateFiltered.length || 1;
 
       const byStage = {};
       stages.forEach(s => { byStage[s.id] = []; });
-      filtered.forEach(l => {
+      dateFiltered.forEach(l => {
         const key = stages.find(s => s.id === l.stage) ? l.stage : stages[0]?.id;
         if (key) byStage[key] = [...(byStage[key] || []), l];
       });
@@ -1677,9 +1730,43 @@
               <option value="">Todos os agentes</option>
               {agents.map(a=><option key={a} value={a}>{agentLabel[a]||a}</option>)}
             </select>
-            <span className="text-xs text-gray-400 font-medium">{filtered.length} leads</span>
+            {/* Calendar date filter */}
+            <div className="relative" ref={adminPipeCalRef}>
+              <button onClick={()=>setShowAdminPipeCal(v=>!v)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-bold transition-all ${adminPipeFrom?'border-gray-700 bg-gray-900 text-white':'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}>
+                <Calendar size={13}/>
+                {adminPipeFrom?`${fmtAPD(adminPipeFrom)} → ${fmtAPD(adminPipeTo||adminPipeFrom)}`:'Período'}
+                {adminPipeFrom&&<span onClick={e=>{e.stopPropagation();clearAdminPipeCal();}} className="ml-1 opacity-70 hover:opacity-100"><X size={11}/></span>}
+              </button>
+              {showAdminPipeCal&&(
+                <div className="absolute top-full left-0 mt-1 z-30 bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 w-72" onClick={e=>e.stopPropagation()}>
+                  <div className="flex items-center justify-between mb-3">
+                    <button onClick={()=>setAdminPipeCalMonth(m=>{const d=new Date(m);d.setMonth(d.getMonth()-1);d.setDate(1);return d;})} className="p-1 rounded-lg hover:bg-gray-100 text-gray-500"><ChevronLeft size={16}/></button>
+                    <span className="text-sm font-bold text-gray-800 capitalize">{adminPipeCalMonth.toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</span>
+                    <button onClick={()=>setAdminPipeCalMonth(m=>{const d=new Date(m);d.setMonth(d.getMonth()+1);d.setDate(1);return d;})} className="p-1 rounded-lg hover:bg-gray-100 text-gray-500"><ChevronRight size={16}/></button>
+                  </div>
+                  <div className="grid grid-cols-7 gap-0.5 mb-1">
+                    {['D','S','T','Q','Q','S','S'].map((d,i)=>(<div key={i} className="text-center text-[10px] font-black text-gray-400 uppercase py-1">{d}</div>))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-0.5">
+                    {adminPipeDays.map((day,i)=>(
+                      <button key={i} onClick={()=>handleAdminPipeDay(day)} disabled={!day}
+                        className={`w-full aspect-square rounded-lg text-xs font-bold transition-all flex items-center justify-center ${!day?'opacity-0 pointer-events-none':''} ${day&&isAdminDayInRange(day)?'bg-gray-900 text-white':''} ${day&&!isAdminDayInRange(day)?'hover:bg-gray-100 text-gray-700':''}`}>
+                        {day?day.getDate():''}
+                      </button>
+                    ))}
+                  </div>
+                  {adminPipeFrom&&(
+                    <button onClick={clearAdminPipeCal} className="mt-3 w-full text-xs font-bold text-gray-500 hover:text-gray-800 flex items-center justify-center gap-1.5 py-1.5 border border-gray-200 rounded-xl hover:bg-gray-50 transition">
+                      <X size={11}/> Limpar período
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            <span className="text-xs text-gray-400 font-medium">{dateFiltered.length} leads</span>
             <span className="text-xs text-gray-400">|</span>
-            <span className="text-xs text-gray-400 font-medium">Pipeline: <strong className="text-gray-700">{fmtBRL(filtered.reduce((s,l)=>s+(parseFloat(l.amount)||0),0))}</strong></span>
+            <span className="text-xs text-gray-400 font-medium">Pipeline: <strong className="text-gray-700">{fmtBRL(dateFiltered.reduce((s,l)=>s+(parseFloat(l.amount)||0),0))}</strong></span>
             <button onClick={()=>setShowConfig(!showConfig)}
               className={`ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-bold transition-all ${showConfig?'bg-gray-900 text-white border-gray-900':'border-gray-200 text-gray-600 bg-white hover:bg-gray-50'}`}>
               <Settings size={13}/> Etapas
@@ -1713,28 +1800,30 @@
             </div>
           )}
 
-          {/* Kanban — flat/seamless */}
+          {/* Kanban — colunas coloridas */}
           {view==='kanban' && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden shrink-0">
-              {/* Stage headers */}
-              <div className="flex border-b border-gray-100" style={{minWidth: stages.length * 240}}>
-                {stages.map(stage => {
-                  const headerBg = STAGE_HEADER_BG[stage.color] || '#6b7280';
-                  const count = (byStage[stage.id]||[]).length;
-                  return (
-                    <div key={stage.id} className="flex-none border-r border-black/5 last:border-r-0 relative"
-                      ref={el => colorPickerRefs.current[stage.id] = el}
-                      style={{width:240, backgroundColor:headerBg}}>
-                      <div className="flex items-center justify-between px-3 py-3">
+            <div className="flex gap-4 overflow-x-auto flex-1 pb-2">
+              {stages.map(stage=>{
+                const sl=byStage[stage.id]||[];
+                const cc=STAGE_COLORS[stage.color]||STAGE_COLORS.gray;
+                return (
+                  <div key={stage.id}
+                    onDragOver={e=>{e.preventDefault();setIsOver(stage.id);}}
+                    onDragLeave={()=>setIsOver(null)}
+                    onDrop={e=>{e.preventDefault();if(dragLead)moveLead(dragLead,stage.id);setIsOver(null);setDragLead(null);}}
+                    className={`flex-none w-72 rounded-2xl border flex flex-col overflow-hidden shrink-0 transition-all ${cc} ${isOver===stage.id?'drop-target':''}`}
+                    style={{maxHeight:'calc(100vh - 300px)'}}>
+                    <div className="shrink-0 relative" ref={el => colorPickerRefs.current[stage.id] = el}>
+                      <div className="p-4 flex justify-between items-center" style={{backgroundColor:STAGE_HEADER_BG[stage.color]||'#6b7280'}}>
                         <div>
                           <h3 className="font-bold text-white text-sm">{stage.title}</h3>
-                          {stage.sub && <p className="text-[10px] text-white/70 font-medium">{stage.sub}</p>}
+                          {stage.sub&&<p className="text-[10px] text-white/70 font-medium">{stage.sub}</p>}
                         </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-white/20 text-white">{count}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-white/20 text-white">{sl.length}</span>
                           <button onClick={e=>{e.stopPropagation();setOpenColorStage(openColorStage===stage.id?null:stage.id);}}
-                            className="p-1 rounded hover:bg-white/20 text-white/80 hover:text-white transition-colors">
-                            <ChevronDown size={11}/>
+                            className="p-1 rounded hover:bg-white/20 transition-colors text-white/80 hover:text-white">
+                            <ChevronDown size={12}/>
                           </button>
                         </div>
                       </div>
@@ -1751,21 +1840,8 @@
                         </div>
                       )}
                     </div>
-                  );
-                })}
-              </div>
-              {/* Cards area — white, continuous */}
-              <div className="flex overflow-x-auto" style={{minWidth: stages.length * 240, minHeight:440}}>
-                {stages.map(stage => {
-                  const sl = byStage[stage.id]||[];
-                  return (
-                    <div key={stage.id}
-                      onDragOver={e=>{e.preventDefault();setIsOver(stage.id);}}
-                      onDragLeave={()=>setIsOver(null)}
-                      onDrop={e=>{e.preventDefault();if(dragLead)moveLead(dragLead,stage.id);setIsOver(null);setDragLead(null);}}
-                      className={`flex-none border-r border-gray-100 last:border-r-0 p-2.5 space-y-2 transition-colors ${isOver===stage.id?'bg-gray-50':'bg-white'}`}
-                      style={{width:240, minHeight:440}}>
-                      {sl.map(lead => (
+                    <div className="p-3 space-y-2.5 overflow-y-auto flex-1">
+                      {sl.map(lead=>(
                         <FlatPipelineCard key={lead.id} lead={lead}
                           isDragging={dragLead===lead.id}
                           onDragStart={()=>setDragLead(lead.id)}
@@ -1775,11 +1851,11 @@
                           onClickCard={()=>setSelectedLead(lead)}
                         />
                       ))}
-                      {sl.length===0 && <p className="text-xs text-gray-300 italic text-center py-8 font-medium">Arraste um lead aqui</p>}
+                      {sl.length===0&&<div className="text-center text-gray-300 text-xs py-6 font-medium">Arraste um lead aqui</div>}
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
             </div>
           )}
           {selectedLead && <LeadDrawer lead={selectedLead} onClose={()=>setSelectedLead(null)} onDelete={removeLead} primaryColor={primaryColor}/>}
@@ -2434,97 +2510,114 @@
 
       /* ── Estratégia ── */
       const EstrategiaContent = () => {
-        const [nodes, setNodes] = useState(() => { try { return JSON.parse(localStorage.getItem('pixt_est_nodes')||'null'); } catch { return null; } });
-        const [tpl, setTpl] = useState(null);
-        const [editing, setEditing] = useState(null);
-        const [editTxt, setEditTxt] = useState('');
-        const TPLS = {
-          'Funil de Leads': [
-            {id:'root',text:'Estratégia de Leads',x:370,y:200,color:'#c6f432'},
-            {id:'t',text:'Topo Funil',x:150,y:90,color:'#3b82f6'},{id:'m',text:'Meio Funil',x:370,y:70,color:'#8b5cf6'},{id:'b',text:'Fundo Funil',x:590,y:90,color:'#10b981'},
-            {id:'t1',text:'Tráfego Pago',x:55,y:185,color:'#93c5fd'},{id:'t2',text:'Orgânico',x:175,y:185,color:'#93c5fd'},
-            {id:'m1',text:'E-mail Nutrição',x:300,y:165,color:'#c4b5fd'},{id:'m2',text:'Retargeting',x:440,y:165,color:'#c4b5fd'},
-            {id:'b1',text:'Proposta',x:530,y:205,color:'#6ee7b7'},{id:'b2',text:'Fechamento',x:655,y:205,color:'#6ee7b7'},
-          ],
-          'E-commerce': [
-            {id:'root',text:'Estratégia E-commerce',x:370,y:200,color:'#c6f432'},
-            {id:'aq',text:'Aquisição',x:140,y:90,color:'#f59e0b'},{id:'conv',text:'Conversão',x:370,y:70,color:'#3b82f6'},{id:'ret',text:'Retenção',x:600,y:90,color:'#10b981'},
-            {id:'aq1',text:'Meta Ads',x:45,y:185,color:'#fcd34d'},{id:'aq2',text:'Google Ads',x:170,y:185,color:'#fcd34d'},
-            {id:'conv1',text:'Landing Page',x:300,y:165,color:'#93c5fd'},{id:'conv2',text:'Checkout',x:440,y:165,color:'#93c5fd'},
-            {id:'ret1',text:'E-mail Mktg',x:530,y:205,color:'#6ee7b7'},{id:'ret2',text:'WhatsApp',x:658,y:205,color:'#6ee7b7'},
-          ],
+        const PC = primaryColor || '#c6f432';
+        const SK = 'pixt_est_miromap';
+        const mkN = (id,x,y,text,color,parentId) => ({id,x,y,text,color:color||PC,parentId:parentId||null,width:160,height:48});
+        const initN = () => {
+          const cx=500,cy=260;
+          return [
+            mkN('root',cx,cy,'Estratégia',PC,null),
+            mkN('n1',cx-240,cy-140,'Topo de Funil','#3b82f6','root'),
+            mkN('n2',cx+200,cy-140,'Conversão','#8b5cf6','root'),
+            mkN('n3',cx-240,cy+140,'Aquisição','#f59e0b','root'),
+            mkN('n4',cx+200,cy+140,'Retenção','#10b981','root'),
+            mkN('n11',cx-380,cy-220,'Tráfego Pago','#93c5fd','n1'),
+            mkN('n12',cx-180,cy-240,'Orgânico','#93c5fd','n1'),
+          ];
         };
-        const active = nodes || (tpl ? TPLS[tpl] : null);
-        const apply = t => { const ns=TPLS[t]; setNodes(ns); setTpl(t); localStorage.setItem('pixt_est_nodes',JSON.stringify(ns)); };
-        const saveEdit = () => {
-          if (!editing||!active) return;
-          const ns=active.map(n=>n.id===editing?{...n,text:editTxt}:n);
-          setNodes(ns); localStorage.setItem('pixt_est_nodes',JSON.stringify(ns)); setEditing(null);
+        const NODE_COLORS = [PC,'#6366f1','#22c55e','#f59e0b','#ef4444','#3b82f6','#ec4899','#14b8a6','#8b5cf6','#f97316'];
+        const [nodes, setNodes] = useState(() => { try { const s=localStorage.getItem(SK); return s?JSON.parse(s):initN(); } catch { return initN(); } });
+        const [pan, setPan] = useState({x:0,y:0});
+        const [zoom, setZoom] = useState(1);
+        const [draggingNode, setDraggingNode] = useState(null);
+        const [dragOffset, setDragOffset] = useState({x:0,y:0});
+        const [isPanning, setIsPanning] = useState(false);
+        const [panStart, setPanStart] = useState({x:0,y:0});
+        const [editingNode, setEditingNode] = useState(null);
+        const [editText, setEditText] = useState('');
+        const [selectedNode, setSelectedNode] = useState(null);
+        const [colorPickNode, setColorPickNode] = useState(null);
+        const svgRef2 = useRef(null);
+        const saveN = n => { try { localStorage.setItem(SK,JSON.stringify(n)); } catch {} };
+        const getEdges2 = ns => ns.filter(n=>n.parentId).map(n=>{
+          const p=ns.find(p2=>p2.id===n.parentId); if(!p) return null;
+          return {id:`${p.id}-${n.id}`,x1:p.x,y1:p.y,x2:n.x,y2:n.y,color:n.color};
+        }).filter(Boolean);
+        const svgC = e => { const r=svgRef2.current?.getBoundingClientRect(); if(!r) return {x:0,y:0}; return {x:(e.clientX-r.left-pan.x)/zoom, y:(e.clientY-r.top-pan.y)/zoom}; };
+        const onNMD = (e,node) => { e.stopPropagation(); if(e.button!==0) return; const c=svgC(e); setDraggingNode(node.id); setDragOffset({x:c.x-node.x,y:c.y-node.y}); setSelectedNode(node.id); setColorPickNode(null); };
+        const onSMD = e => { if(e.button===0&&!draggingNode){setIsPanning(true);setPanStart({x:e.clientX-pan.x,y:e.clientY-pan.y});setSelectedNode(null);setColorPickNode(null);} };
+        const onMM = e => {
+          if(draggingNode){ const c=svgC(e); setNodes(ns=>ns.map(n=>n.id===draggingNode?{...n,x:c.x-dragOffset.x,y:c.y-dragOffset.y}:n)); }
+          else if(isPanning){ setPan({x:e.clientX-panStart.x,y:e.clientY-panStart.y}); }
         };
-        const reset = () => { setNodes(null); setTpl(null); localStorage.removeItem('pixt_est_nodes'); };
-        const getEdges = ns => {
-          if (!ns) return [];
-          const root = ns.find(n=>n.id==='root');
-          const lines = [];
-          ns.filter(n=>n.id!=='root').forEach(n=>{
-            const parentId = n.id.replace(/\d+$/, '');
-            const parent = (parentId&&parentId!==n.id) ? (ns.find(p=>p.id===parentId)||root) : root;
-            lines.push({x1:parent.x,y1:parent.y,x2:n.x,y2:n.y});
-          });
-          return lines;
-        };
-        if (!active) return (
-          <div className="bg-white border border-gray-100 rounded-2xl p-8 text-center shadow-sm">
-            <MapPin size={28} className="text-gray-200 mx-auto mb-3"/>
-            <p className="font-black text-gray-900 mb-1">Mapa Estratégico</p>
-            <p className="text-sm text-gray-400 mb-5">Visualize sua estratégia de marketing em um mapa interativo. Clique em um nó para editar o texto.</p>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3">Escolha um template</p>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {Object.keys(TPLS).map(t => (
-                <button key={t} onClick={() => apply(t)} className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
-                  {t}
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-        const edges = getEdges(active);
+        const onMU = () => { if(draggingNode){ setNodes(ns=>{saveN(ns);return ns;}); } setDraggingNode(null); setIsPanning(false); };
+        const onWh = e => { e.preventDefault(); const d=e.deltaY<0?1.1:0.9; setZoom(z=>Math.min(3,Math.max(0.2,z*d))); };
+        const addChild2 = pid => { const p=nodes.find(n=>n.id===pid); if(!p)return; const ang=Math.random()*Math.PI*2,r=220,id='n'+Date.now(); const col=NODE_COLORS.filter(c=>c!==p.color)[Math.floor(Math.random()*9)]; const next=[...nodes,mkN(id,p.x+Math.cos(ang)*r,p.y+Math.sin(ang)*r,'Novo nó',col,pid)]; setNodes(next);saveN(next);setSelectedNode(id);setEditingNode(id);setEditText('Novo nó'); };
+        const delNode2 = id => { if(id==='root')return; const toRm=new Set([id]); let ch=true; while(ch){ch=false;nodes.forEach(n=>{if(n.parentId&&toRm.has(n.parentId)&&!toRm.has(n.id)){toRm.add(n.id);ch=true;}});}; const next=nodes.filter(n=>!toRm.has(n.id)); setNodes(next);saveN(next);setSelectedNode(null); };
+        const startEdit2 = node => { setEditingNode(node.id); setEditText(node.text); setColorPickNode(null); };
+        const commitEdit2 = () => { if(!editingNode)return; const next=nodes.map(n=>n.id===editingNode?{...n,text:editText||n.text}:n); setNodes(next);saveN(next);setEditingNode(null); };
+        const changeColor2 = (id,color) => { const next=nodes.map(n=>n.id===id?{...n,color}:n); setNodes(next);saveN(next);setColorPickNode(null); };
+        const edges2 = getEdges2(nodes);
         return (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <p className="text-xs font-semibold text-gray-400">Clique em um nó para editar o texto</p>
-              <div className="flex gap-1.5 flex-wrap">
-                {Object.keys(TPLS).map(t => (
-                  <button key={t} onClick={() => apply(t)}
-                    className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${tpl===t?'border-transparent text-black':'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
-                    style={tpl===t?{backgroundColor:primaryColor}:{}}>
-                    {t}
-                  </button>
-                ))}
-                <button onClick={reset} className="px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-semibold text-gray-400 hover:text-red-500 hover:border-red-200 transition-all">Limpar</button>
+          <div className="flex flex-col" style={{height:'480px'}}>
+            <div className="flex items-center justify-between mb-2 shrink-0 flex-wrap gap-2">
+              <p className="text-xs font-semibold text-gray-400">Duplo clique = editar · Arraste = mover · Scroll = zoom · Arraste fundo = pan</p>
+              <div className="flex gap-1.5">
+                <button onClick={()=>setZoom(z=>Math.min(3,z*1.2))} className="w-7 h-7 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-600" title="Zoom in"><ZoomIn size={13}/></button>
+                <button onClick={()=>setZoom(z=>Math.max(0.2,z*0.8))} className="w-7 h-7 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-600" title="Zoom out"><ZoomOut size={13}/></button>
+                <button onClick={()=>{setPan({x:0,y:0});setZoom(1);}} className="w-7 h-7 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-600" title="Reset view"><Maximize2 size={13}/></button>
+                <span className="text-[10px] text-gray-400 font-bold self-center w-8 text-center">{Math.round(zoom*100)}%</span>
+                <button onClick={()=>{const n=initN();setNodes(n);saveN(n);setPan({x:0,y:0});setZoom(1);}} className="px-2 py-1 rounded-lg border border-red-100 bg-red-50 text-red-400 text-[10px] font-bold hover:bg-red-100">Reset</button>
+                <button onClick={()=>{saveN(nodes);}} className="px-3 py-1.5 rounded-lg font-bold text-black text-xs flex items-center gap-1" style={{backgroundColor:PC}}><Save size={11}/> Salvar</button>
               </div>
             </div>
-            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-auto">
-              <svg width="760" height="310" style={{minWidth:'700px',display:'block'}}>
-                {edges.map((e,i) => (
-                  <line key={i} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke="#e5e7eb" strokeWidth="1.5" strokeDasharray="5,3"/>
-                ))}
-                {active.map(n => (
-                  <g key={n.id} transform={`translate(${n.x},${n.y})`} style={{cursor:'pointer'}} onClick={() => { setEditing(n.id); setEditTxt(n.text); }}>
-                    <rect x={-56} y={-17} width={112} height={34} rx={9} fill={n.id==='root'?n.color:'white'} stroke={n.color} strokeWidth={n.id==='root'?0:1.5}/>
-                    {editing===n.id ? (
-                      <foreignObject x={-50} y={-12} width={100} height={24}>
-                        <input style={{width:'100%',background:'transparent',border:'none',outline:'none',fontSize:'10px',fontWeight:'700',textAlign:'center',color:'#111'}}
-                          value={editTxt} onChange={e=>setEditTxt(e.target.value)} onBlur={saveEdit} onKeyDown={e=>e.key==='Enter'&&saveEdit()} autoFocus/>
-                      </foreignObject>
-                    ) : (
-                      <text textAnchor="middle" dominantBaseline="middle" fontSize="10" fontWeight="700" fill={n.id==='root'?'#111':'#374151'}>
-                        {n.text.length>15?n.text.slice(0,14)+'…':n.text}
-                      </text>
-                    )}
-                  </g>
-                ))}
+            <div className="flex-1 relative rounded-2xl border border-gray-200 bg-[#f8f9fb] overflow-hidden shadow-inner"
+              style={{cursor:isPanning?'grabbing':'grab'}}
+              ref={svgRef2}
+              onMouseDown={onSMD} onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU} onWheel={onWh}>
+              <svg width="100%" height="100%" className="absolute inset-0 pointer-events-none" style={{zIndex:0}}>
+                <defs><pattern id="estDots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.8" fill="#d1d5db"/></pattern></defs>
+                <rect width="100%" height="100%" fill="url(#estDots)"/>
               </svg>
+              <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%" style={{zIndex:1}}>
+                <g transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}>
+                  {edges2.map(e=><line key={e.id} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke={e.color} strokeWidth={2/zoom} strokeOpacity={0.45} strokeDasharray={`${6/zoom},${3/zoom}`}/>)}
+                </g>
+              </svg>
+              <div className="absolute inset-0" style={{zIndex:2}}>
+                {nodes.map(node=>{
+                  const nx=node.x*zoom+pan.x,ny=node.y*zoom+pan.y,w=node.width*zoom,h=node.height*zoom;
+                  const isSel=selectedNode===node.id,isEdit=editingNode===node.id,isRoot=node.id==='root';
+                  const fs=Math.max(9,12*zoom);
+                  return (
+                    <div key={node.id} style={{position:'absolute',left:nx-w/2,top:ny-h/2,width:w,height:h,userSelect:'none',zIndex:isSel?10:3}}>
+                      <div onMouseDown={e=>onNMD(e,node)} onDoubleClick={()=>startEdit2(node)}
+                        className="w-full h-full rounded-xl flex items-center justify-center shadow-md transition-all relative"
+                        style={{backgroundColor:node.color,border:isSel?`${2/zoom}px solid #1f2937`:`${1.5/zoom}px solid rgba(0,0,0,0.12)`,cursor:draggingNode===node.id?'grabbing':'grab',transform:isSel?'scale(1.06)':'scale(1)'}}>
+                        {isEdit?(
+                          <input autoFocus value={editText} onChange={e=>setEditText(e.target.value)} onBlur={commitEdit2} onKeyDown={e=>{if(e.key==='Enter')commitEdit2();if(e.key==='Escape')setEditingNode(null);}} onClick={e=>e.stopPropagation()}
+                            className="w-full text-center font-bold outline-none bg-transparent px-1" style={{fontSize:fs,color:isRoot||node.color===PC?'#111':'#fff'}}/>
+                        ):(
+                          <span className="font-bold px-2 text-center leading-tight overflow-hidden" style={{fontSize:fs,color:isRoot||node.color===PC?'#111':'#fff',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden',maxWidth:'100%'}}>{node.text}</span>
+                        )}
+                      </div>
+                      {isSel&&!isEdit&&(
+                        <div className="absolute flex gap-0.5" style={{top:-24*zoom,left:'50%',transform:'translateX(-50%)',zIndex:20}}>
+                          <button onClick={e=>{e.stopPropagation();addChild2(node.id);}} className="rounded-full bg-white border border-gray-300 shadow text-gray-700 hover:bg-gray-50 flex items-center justify-center" style={{width:20*zoom,height:20*zoom}} title="Adicionar filho"><Plus size={10*zoom}/></button>
+                          <button onClick={e=>{e.stopPropagation();startEdit2(node);}} className="rounded-full bg-white border border-gray-300 shadow text-blue-600 hover:bg-blue-50 flex items-center justify-center" style={{width:20*zoom,height:20*zoom}} title="Editar"><Edit3 size={9*zoom}/></button>
+                          <button onClick={e=>{e.stopPropagation();setColorPickNode(node.id);}} className="rounded-full shadow border border-gray-300 flex items-center justify-center hover:scale-110" style={{width:20*zoom,height:20*zoom,backgroundColor:node.color}} title="Cor"/>
+                          {!isRoot&&<button onClick={e=>{e.stopPropagation();delNode2(node.id);}} className="rounded-full bg-white border border-red-200 shadow text-red-500 hover:bg-red-50 flex items-center justify-center" style={{width:20*zoom,height:20*zoom}} title="Excluir"><Trash2 size={9*zoom}/></button>}
+                        </div>
+                      )}
+                      {colorPickNode===node.id&&(
+                        <div className="absolute bg-white rounded-2xl shadow-2xl border border-gray-200 p-2 flex flex-wrap gap-1" style={{top:'100%',left:'50%',transform:'translateX(-50%)',marginTop:6,zIndex:30,width:140}} onClick={e=>e.stopPropagation()}>
+                          {NODE_COLORS.map(c=><button key={c} onClick={()=>changeColor2(node.id,c)} className="w-5 h-5 rounded-full border-2 hover:scale-110 transition-all" style={{backgroundColor:c,borderColor:node.color===c?'#111':'transparent'}}/>)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         );
@@ -2819,6 +2912,7 @@
       const [isAgentOn, setIsAgentOn] = useState(true);
       const [agentsOpen, setAgentsOpen] = useState(false);
       const [trafficOpen, setTrafficOpen] = useState(false);
+      const [adminSideCollapsed, setAdminSideCollapsed] = useState(false);
       const toast = useToast();
 
       // Auto-open traffic dropdown when a traffic sub is active
@@ -3060,81 +3154,98 @@
         const navItem = (active) =>
           `w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all select-none ${active ? 'text-black shadow-sm' : 'hover:bg-gray-100/80 hover:text-gray-900'}`;
 
+        const sc = adminSideCollapsed;
+        const navItemC = (active) =>
+          `w-full flex items-center ${sc ? 'justify-center px-0 py-3' : 'gap-3 px-3 py-2.5'} rounded-xl text-sm font-semibold transition-all select-none ${active ? 'text-black shadow-sm' : 'hover:bg-gray-100/80 hover:text-gray-900'}`;
+
         return (
           <div className="h-screen w-full flex font-sans bg-gray-50 text-gray-900 overflow-hidden">
-            <aside className="relative z-20 w-60 h-full flex flex-col bg-white backdrop-blur-xl border-r border-gray-200/60 shrink-0">
-              <div className="p-4 border-b border-gray-100 shrink-0 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center shadow-sm shrink-0" style={{backgroundColor:PRIMARY}}>
-                  <Zap size={16} className="text-black" fill="currentColor"/>
-                </div>
-                <div>
+            <aside className={`relative z-20 ${sc ? 'w-[4.5rem]' : 'w-60'} h-full flex flex-col bg-white backdrop-blur-xl border-r border-gray-200/60 shrink-0 transition-all duration-300`}>
+              {/* Collapse toggle */}
+              <button onClick={() => setAdminSideCollapsed(c => !c)}
+                className="absolute top-5 -right-3 z-50 w-6 h-6 rounded-full border border-gray-200 bg-white shadow-md flex items-center justify-center text-gray-500 hover:scale-110 transition-all">
+                {sc ? <ChevronRight size={12}/> : <ChevronLeft size={12}/>}
+              </button>
+
+              <div className={`${sc ? 'p-2 justify-center' : 'p-4'} border-b border-gray-100 shrink-0 flex items-center gap-3`}>
+                <img src="/pixt perfil.png" alt="Pixt IA" className="w-8 h-8 rounded-xl object-cover shadow-sm shrink-0" />
+                {!sc && <div>
                   <h1 className="text-sm font-black tracking-tight">Pixt <span style={{color:PRIMARY}}>IA</span></h1>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Admin</p>
-                </div>
+                </div>}
               </div>
-              <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
+              <nav className={`flex-1 overflow-y-auto p-2 space-y-0.5 ${sc ? 'flex flex-col items-center' : ''}`}>
                 {SPECIAL_TABS.filter(t=>!hiddenTabs.includes(t.id)).map(tab=>{
                   const Icon=tab.icon; const active=!activeAgent&&activeSpecial===tab.id;
-                  return <button key={tab.id} onClick={()=>selectSpecial(tab.id)} className={navItem(active)} style={active?{backgroundColor:PRIMARY}:{color:labelColor}}><Icon size={16} className="shrink-0"/><span className="truncate">{getLabel(tab)}</span></button>;
+                  return <button key={tab.id} onClick={()=>selectSpecial(tab.id)} className={navItemC(active)} style={active?{backgroundColor:PRIMARY}:{color:labelColor}} title={sc?getLabel(tab):undefined}><Icon size={16} className="shrink-0"/>{!sc&&<span className="truncate">{getLabel(tab)}</span>}</button>;
                 })}
                 {/* Tráfego collapsible */}
-                <div>
-                  <button onClick={()=>setTrafficOpen(o=>!o)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-gray-100/80"
-                    style={{color: isTrafficTab&&!activeAgent ? PRIMARY : labelColor}}>
-                    <div className="flex items-center gap-3"><TrendingUp size={16} className="shrink-0"/><span>Tráfego & Mídias</span></div>
-                    <ChevronDown size={13} className={`transition-transform duration-200 ${trafficOpen?'rotate-180':''}`}/>
-                  </button>
-                  {trafficOpen && (
-                    <div className="ml-3 mt-0.5 space-y-0.5 border-l-2 border-gray-100 pl-2">
-                      {TRAFFIC_SUBS.map(tab=>{
-                        const Icon=tab.icon; const active=!activeAgent&&activeSpecial===tab.id;
-                        return <button key={tab.id} onClick={()=>selectSpecial(tab.id)}
-                          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${active?'text-black shadow-sm':'hover:bg-gray-100/80 hover:text-gray-900'}`}
-                          style={active?{backgroundColor:PRIMARY}:{color:labelColor}}>
-                          <Icon size={14} className="shrink-0"/><span className="truncate">{tab.label}</span>
-                        </button>;
-                      })}
-                    </div>
-                  )}
-                </div>
+                {sc ? (
+                  <button onClick={()=>selectSpecial('traffic-overview')} className={navItemC(isTrafficTab&&!activeAgent)} style={isTrafficTab&&!activeAgent?{backgroundColor:PRIMARY}:{color:labelColor}} title="Tráfego & Mídias"><TrendingUp size={16}/></button>
+                ) : (
+                  <div>
+                    <button onClick={()=>setTrafficOpen(o=>!o)}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-gray-100/80"
+                      style={{color: isTrafficTab&&!activeAgent ? PRIMARY : labelColor}}>
+                      <div className="flex items-center gap-3"><TrendingUp size={16} className="shrink-0"/><span>Tráfego & Mídias</span></div>
+                      <ChevronDown size={13} className={`transition-transform duration-200 ${trafficOpen?'rotate-180':''}`}/>
+                    </button>
+                    {trafficOpen && (
+                      <div className="ml-3 mt-0.5 space-y-0.5 border-l-2 border-gray-100 pl-2">
+                        {TRAFFIC_SUBS.map(tab=>{
+                          const Icon=tab.icon; const active=!activeAgent&&activeSpecial===tab.id;
+                          return <button key={tab.id} onClick={()=>selectSpecial(tab.id)}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${active?'text-black shadow-sm':'hover:bg-gray-100/80 hover:text-gray-900'}`}
+                            style={active?{backgroundColor:PRIMARY}:{color:labelColor}}>
+                            <Icon size={14} className="shrink-0"/><span className="truncate">{tab.label}</span>
+                          </button>;
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="mx-3 my-1 h-px bg-gray-100"/>
                 {/* Agentes collapsible */}
-                <div>
-                  <button onClick={()=>setAgentsOpen(o=>!o)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-gray-100/80"
-                    style={{color:labelColor}}>
-                    <div className="flex items-center gap-3"><Bot size={16} className="shrink-0"/><span>Agentes</span></div>
-                    <ChevronDown size={13} className={`transition-transform duration-200 ${agentsOpen?'rotate-180':''}`}/>
-                  </button>
-                  {agentsOpen && (
-                    <div className="ml-3 mt-0.5 space-y-0.5 border-l-2 border-gray-100 pl-2">
-                      {AGENT_TABS_FILTERED.filter(t=>!hiddenTabs.includes(t.id)).map(tab=>{
-                        const Icon=tab.icon; const active=activeAgent===tab.id;
-                        return <button key={tab.id} onClick={()=>selectAgent(tab.id)}
-                          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${active?'text-black shadow-sm':'hover:bg-gray-100/80 hover:text-gray-900'}`}
-                          style={active?{backgroundColor:PRIMARY}:{color:labelColor}}>
-                          <Icon size={14} className="shrink-0"/><span className="truncate">{getLabel(tab)}</span>
-                        </button>;
-                      })}
-                    </div>
-                  )}
-                </div>
-                <div className="pt-3 pb-1"><p className="text-[10px] font-bold uppercase tracking-wider px-3 text-gray-300">Plataforma <span className="ml-1 opacity-40 font-normal normal-case">↕ arraste</span></p></div>
+                {sc ? (
+                  <button onClick={()=>setAgentsOpen(o=>!o)} className={navItemC(!!activeAgent)} style={activeAgent?{backgroundColor:PRIMARY}:{color:labelColor}} title="Agentes"><Bot size={16}/></button>
+                ) : (
+                  <div>
+                    <button onClick={()=>setAgentsOpen(o=>!o)}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-gray-100/80"
+                      style={{color:labelColor}}>
+                      <div className="flex items-center gap-3"><Bot size={16} className="shrink-0"/><span>Agentes</span></div>
+                      <ChevronDown size={13} className={`transition-transform duration-200 ${agentsOpen?'rotate-180':''}`}/>
+                    </button>
+                    {agentsOpen && (
+                      <div className="ml-3 mt-0.5 space-y-0.5 border-l-2 border-gray-100 pl-2">
+                        {AGENT_TABS_FILTERED.filter(t=>!hiddenTabs.includes(t.id)).map(tab=>{
+                          const Icon=tab.icon; const active=activeAgent===tab.id;
+                          return <button key={tab.id} onClick={()=>selectAgent(tab.id)}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${active?'text-black shadow-sm':'hover:bg-gray-100/80 hover:text-gray-900'}`}
+                            style={active?{backgroundColor:PRIMARY}:{color:labelColor}}>
+                            <Icon size={14} className="shrink-0"/><span className="truncate">{getLabel(tab)}</span>
+                          </button>;
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!sc && <div className="pt-3 pb-1"><p className="text-[10px] font-bold uppercase tracking-wider px-3 text-gray-300">Plataforma <span className="ml-1 opacity-40 font-normal normal-case">↕ arraste</span></p></div>}
+                {sc && <div className="w-8 h-px bg-gray-100 my-1 shrink-0"/>}
                 {orderedPlatformTabs.filter(t=>!hiddenTabs.includes(t.id)).map(tab=>{
                   const Icon=tab.icon; const active=!activeAgent&&activeSpecial===tab.id; const dragging=dragId===tab.id;
                   return (
                     <button key={tab.id} draggable onDragStart={e=>onDragStart(e,tab.id)} onDragOver={onDragOver} onDrop={e=>onDrop(e,tab.id)} onDragEnd={()=>setDragId(null)} onClick={()=>selectSpecial(tab.id)}
-                      className={`${navItem(active)} cursor-grab active:cursor-grabbing ${dragging?'opacity-30':''}`} style={active?{backgroundColor:PRIMARY}:{color:labelColor}}>
-                      <Icon size={16} className="shrink-0"/><span className="truncate">{getLabel(tab)}</span>
+                      className={`${navItemC(active)} cursor-grab active:cursor-grabbing ${dragging?'opacity-30':''}`} style={active?{backgroundColor:PRIMARY}:{color:labelColor}} title={sc?getLabel(tab):undefined}>
+                      <Icon size={16} className="shrink-0"/>{!sc&&<span className="truncate">{getLabel(tab)}</span>}
                     </button>
                   );
                 })}
               </nav>
-              <div className="p-2 border-t border-gray-100 shrink-0 space-y-0.5">
-                <div className="text-xs font-medium px-3 py-1 truncate text-gray-400">{auth.user?.email}</div>
-                <button onClick={()=>selectSpecial('customize')} className={navItem(!activeAgent&&activeSpecial==='customize')} style={!activeAgent&&activeSpecial==='customize'?{backgroundColor:PRIMARY}:{color:labelColor}}><Settings size={16} className="shrink-0"/><span>Personalizar</span></button>
-                <button onClick={onLogout} className={navItem(false)} style={{color:labelColor}}><LogOut size={16} className="shrink-0"/><span>Sair</span></button>
+              <div className={`p-2 border-t border-gray-100 shrink-0 ${sc ? 'flex flex-col items-center gap-1' : 'space-y-0.5'}`}>
+                {!sc && <div className="text-xs font-medium px-3 py-1 truncate text-gray-400">{auth.user?.email}</div>}
+                <button onClick={()=>selectSpecial('customize')} className={navItemC(!activeAgent&&activeSpecial==='customize')} style={!activeAgent&&activeSpecial==='customize'?{backgroundColor:PRIMARY}:{color:labelColor}} title={sc?'Personalizar':undefined}><Settings size={16} className="shrink-0"/>{!sc&&<span>Personalizar</span>}</button>
+                <button onClick={onLogout} className={navItemC(false)} style={{color:labelColor}} title={sc?'Sair':undefined}><LogOut size={16} className="shrink-0"/>{!sc&&<span>Sair</span>}</button>
               </div>
             </aside>
             <main className="flex-1 flex flex-col overflow-hidden">
@@ -3167,81 +3278,96 @@
         const DARK_ITEM = '#1e2533';
         const navItemDark = (active) =>
           `w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all select-none ${active ? 'text-black shadow-sm' : 'hover:text-white'}`;
+        const scDark = adminSideCollapsed;
+        const navItemDarkC = (active) =>
+          `w-full flex items-center ${scDark?'justify-center px-0 py-3':'gap-3 px-3 py-2.5'} rounded-xl text-sm font-semibold transition-all select-none ${active ? 'text-black shadow-sm' : 'hover:text-white'}`;
         return (
           <div className="h-screen w-full flex font-sans overflow-hidden" style={{backgroundColor:DARK_BG, color:'#e5e7eb'}}>
-            <aside className="relative z-20 w-60 h-full flex flex-col shrink-0 border-r" style={{backgroundColor:DARK_SIDE, borderColor:DARK_BDR}}>
-              <div className="p-4 shrink-0 flex items-center gap-3 border-b" style={{borderColor:DARK_BDR}}>
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center shadow-sm shrink-0" style={{backgroundColor:PRIMARY}}>
-                  <Zap size={16} className="text-black" fill="currentColor"/>
-                </div>
-                <div>
+            <aside className={`relative z-20 ${scDark?'w-[4.5rem]':'w-60'} h-full flex flex-col shrink-0 border-r transition-all duration-300`} style={{backgroundColor:DARK_SIDE, borderColor:DARK_BDR}}>
+              <button onClick={() => setAdminSideCollapsed(c => !c)}
+                className="absolute top-5 -right-3 z-50 w-6 h-6 rounded-full border shadow-md flex items-center justify-center transition-all hover:scale-110"
+                style={{backgroundColor:DARK_SIDE, borderColor:DARK_BDR, color:'#9ca3af'}}>
+                {scDark ? <ChevronRight size={12}/> : <ChevronLeft size={12}/>}
+              </button>
+              <div className={`${scDark?'p-2 justify-center':'p-4'} shrink-0 flex items-center gap-3 border-b`} style={{borderColor:DARK_BDR}}>
+                <img src="/pixt perfil.png" alt="Pixt IA" className="w-8 h-8 rounded-xl object-cover shadow-sm shrink-0" />
+                {!scDark && <div>
                   <h1 className="text-sm font-black tracking-tight text-white">Pixt <span style={{color:PRIMARY}}>IA</span></h1>
                   <p className="text-[10px] font-bold uppercase tracking-wider" style={{color:'#4b5563'}}>Admin</p>
-                </div>
+                </div>}
               </div>
-              <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
+              <nav className={`flex-1 overflow-y-auto p-2 space-y-0.5 ${scDark?'flex flex-col items-center':''}`}>
                 {SPECIAL_TABS.filter(t=>!hiddenTabs.includes(t.id)).map(tab=>{
                   const Icon=tab.icon; const active=!activeAgent&&activeSpecial===tab.id;
-                  return <button key={tab.id} onClick={()=>selectSpecial(tab.id)} className={navItemDark(active)} style={active?{backgroundColor:PRIMARY}:{color:'#9ca3af'}}><Icon size={16} className="shrink-0"/><span className="truncate">{getLabel(tab)}</span></button>;
+                  return <button key={tab.id} onClick={()=>selectSpecial(tab.id)} className={navItemDarkC(active)} style={active?{backgroundColor:PRIMARY}:{color:'#9ca3af'}} title={scDark?getLabel(tab):undefined}><Icon size={16} className="shrink-0"/>{!scDark&&<span className="truncate">{getLabel(tab)}</span>}</button>;
                 })}
                 {/* Tráfego collapsible — dark */}
-                <div>
-                  <button onClick={()=>setTrafficOpen(o=>!o)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all"
-                    style={{color: isTrafficTab&&!activeAgent ? PRIMARY : '#9ca3af'}}>
-                    <div className="flex items-center gap-3"><TrendingUp size={16} className="shrink-0"/><span>Tráfego & Mídias</span></div>
-                    <ChevronDown size={13} className={`transition-transform duration-200 ${trafficOpen?'rotate-180':''}`}/>
-                  </button>
-                  {trafficOpen && (
-                    <div className="ml-3 mt-0.5 space-y-0.5 border-l-2 pl-2" style={{borderColor:'#1f2937'}}>
-                      {TRAFFIC_SUBS.map(tab=>{
-                        const Icon=tab.icon; const active=!activeAgent&&activeSpecial===tab.id;
-                        return <button key={tab.id} onClick={()=>selectSpecial(tab.id)}
-                          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${active?'text-black shadow-sm':''}`}
-                          style={active?{backgroundColor:PRIMARY}:{color:'#9ca3af'}}>
-                          <Icon size={14} className="shrink-0"/><span className="truncate">{tab.label}</span>
-                        </button>;
-                      })}
-                    </div>
-                  )}
-                </div>
+                {scDark ? (
+                  <button onClick={()=>selectSpecial('traffic-overview')} className={navItemDarkC(isTrafficTab&&!activeAgent)} style={isTrafficTab&&!activeAgent?{backgroundColor:PRIMARY}:{color:'#9ca3af'}} title="Tráfego & Mídias"><TrendingUp size={16}/></button>
+                ) : (
+                  <div>
+                    <button onClick={()=>setTrafficOpen(o=>!o)}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                      style={{color: isTrafficTab&&!activeAgent ? PRIMARY : '#9ca3af'}}>
+                      <div className="flex items-center gap-3"><TrendingUp size={16} className="shrink-0"/><span>Tráfego & Mídias</span></div>
+                      <ChevronDown size={13} className={`transition-transform duration-200 ${trafficOpen?'rotate-180':''}`}/>
+                    </button>
+                    {trafficOpen && (
+                      <div className="ml-3 mt-0.5 space-y-0.5 border-l-2 pl-2" style={{borderColor:'#1f2937'}}>
+                        {TRAFFIC_SUBS.map(tab=>{
+                          const Icon=tab.icon; const active=!activeAgent&&activeSpecial===tab.id;
+                          return <button key={tab.id} onClick={()=>selectSpecial(tab.id)}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${active?'text-black shadow-sm':''}`}
+                            style={active?{backgroundColor:PRIMARY}:{color:'#9ca3af'}}>
+                            <Icon size={14} className="shrink-0"/><span className="truncate">{tab.label}</span>
+                          </button>;
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="mx-3 my-1 h-px" style={{backgroundColor:'#1f2937'}}/>
                 {/* Agentes collapsible — dark */}
-                <div>
-                  <button onClick={()=>setAgentsOpen(o=>!o)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all"
-                    style={{color:'#9ca3af'}}>
-                    <div className="flex items-center gap-3"><Bot size={16} className="shrink-0"/><span>Agentes</span></div>
-                    <ChevronDown size={13} className={`transition-transform duration-200 ${agentsOpen?'rotate-180':''}`}/>
-                  </button>
-                  {agentsOpen && (
-                    <div className="ml-3 mt-0.5 space-y-0.5 border-l-2 pl-2" style={{borderColor:'#1f2937'}}>
-                      {AGENT_TABS_FILTERED.filter(t=>!hiddenTabs.includes(t.id)).map(tab=>{
-                        const Icon=tab.icon; const active=activeAgent===tab.id;
-                        return <button key={tab.id} onClick={()=>selectAgent(tab.id)}
-                          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${active?'text-black shadow-sm':''}`}
-                          style={active?{backgroundColor:PRIMARY}:{color:'#9ca3af'}}>
-                          <Icon size={14} className="shrink-0"/><span className="truncate">{getLabel(tab)}</span>
-                        </button>;
-                      })}
-                    </div>
-                  )}
-                </div>
-                <div className="pt-3 pb-1"><p className="text-[10px] font-bold uppercase tracking-wider px-3" style={{color:'#374151'}}>Plataforma <span className="ml-1 opacity-40 font-normal normal-case">↕ arraste</span></p></div>
+                {scDark ? (
+                  <button onClick={()=>setAgentsOpen(o=>!o)} className={navItemDarkC(!!activeAgent)} style={activeAgent?{backgroundColor:PRIMARY}:{color:'#9ca3af'}} title="Agentes"><Bot size={16}/></button>
+                ) : (
+                  <div>
+                    <button onClick={()=>setAgentsOpen(o=>!o)}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                      style={{color:'#9ca3af'}}>
+                      <div className="flex items-center gap-3"><Bot size={16} className="shrink-0"/><span>Agentes</span></div>
+                      <ChevronDown size={13} className={`transition-transform duration-200 ${agentsOpen?'rotate-180':''}`}/>
+                    </button>
+                    {agentsOpen && (
+                      <div className="ml-3 mt-0.5 space-y-0.5 border-l-2 pl-2" style={{borderColor:'#1f2937'}}>
+                        {AGENT_TABS_FILTERED.filter(t=>!hiddenTabs.includes(t.id)).map(tab=>{
+                          const Icon=tab.icon; const active=activeAgent===tab.id;
+                          return <button key={tab.id} onClick={()=>selectAgent(tab.id)}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${active?'text-black shadow-sm':''}`}
+                            style={active?{backgroundColor:PRIMARY}:{color:'#9ca3af'}}>
+                            <Icon size={14} className="shrink-0"/><span className="truncate">{getLabel(tab)}</span>
+                          </button>;
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!scDark && <div className="pt-3 pb-1"><p className="text-[10px] font-bold uppercase tracking-wider px-3" style={{color:'#374151'}}>Plataforma <span className="ml-1 opacity-40 font-normal normal-case">↕ arraste</span></p></div>}
+                {scDark && <div className="w-8 h-px my-1 shrink-0" style={{backgroundColor:'#374151'}}/>}
                 {orderedPlatformTabs.filter(t=>!hiddenTabs.includes(t.id)).map(tab=>{
                   const Icon=tab.icon; const active=!activeAgent&&activeSpecial===tab.id; const dragging=dragId===tab.id;
                   return (
                     <button key={tab.id} draggable onDragStart={e=>onDragStart(e,tab.id)} onDragOver={onDragOver} onDrop={e=>onDrop(e,tab.id)} onDragEnd={()=>setDragId(null)} onClick={()=>selectSpecial(tab.id)}
-                      className={`${navItemDark(active)} cursor-grab active:cursor-grabbing ${dragging?'opacity-30':''}`} style={active?{backgroundColor:PRIMARY}:{color:'#9ca3af'}}>
-                      <Icon size={16} className="shrink-0"/><span className="truncate">{getLabel(tab)}</span>
+                      className={`${navItemDarkC(active)} cursor-grab active:cursor-grabbing ${dragging?'opacity-30':''}`} style={active?{backgroundColor:PRIMARY}:{color:'#9ca3af'}} title={scDark?getLabel(tab):undefined}>
+                      <Icon size={16} className="shrink-0"/>{!scDark&&<span className="truncate">{getLabel(tab)}</span>}
                     </button>
                   );
                 })}
               </nav>
-              <div className="p-2 shrink-0 space-y-0.5 border-t" style={{borderColor:DARK_BDR}}>
-                <div className="text-xs font-medium px-3 py-1 truncate" style={{color:'#4b5563'}}>{auth.user?.email}</div>
-                <button onClick={()=>selectSpecial('customize')} className={navItemDark(!activeAgent&&activeSpecial==='customize')} style={!activeAgent&&activeSpecial==='customize'?{backgroundColor:PRIMARY}:{color:'#9ca3af'}}><Settings size={16} className="shrink-0"/><span>Personalizar</span></button>
-                <button onClick={onLogout} className={navItemDark(false)} style={{color:'#9ca3af'}}><LogOut size={16} className="shrink-0"/><span>Sair</span></button>
+              <div className={`p-2 shrink-0 border-t ${scDark?'flex flex-col items-center gap-1':'space-y-0.5'}`} style={{borderColor:DARK_BDR}}>
+                {!scDark && <div className="text-xs font-medium px-3 py-1 truncate" style={{color:'#4b5563'}}>{auth.user?.email}</div>}
+                <button onClick={()=>selectSpecial('customize')} className={navItemDarkC(!activeAgent&&activeSpecial==='customize')} style={!activeAgent&&activeSpecial==='customize'?{backgroundColor:PRIMARY}:{color:'#9ca3af'}} title={scDark?'Personalizar':undefined}><Settings size={16} className="shrink-0"/>{!scDark&&<span>Personalizar</span>}</button>
+                <button onClick={onLogout} className={navItemDarkC(false)} style={{color:'#9ca3af'}} title={scDark?'Sair':undefined}><LogOut size={16} className="shrink-0"/>{!scDark&&<span>Sair</span>}</button>
               </div>
             </aside>
             <main className="flex-1 flex flex-col overflow-hidden" style={{backgroundColor:DARK_BG}}>
@@ -3282,9 +3408,7 @@
           {/* Icon-only sidebar */}
           <aside className="w-[4.5rem] h-full flex flex-col bg-white border-r border-gray-200 shrink-0">
             <div className="h-14 flex items-center justify-center border-b border-gray-100 shrink-0">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-sm" style={{backgroundColor:PRIMARY}}>
-                <Zap size={17} className="text-black" fill="currentColor"/>
-              </div>
+              <img src="/pixt perfil.png" alt="Pixt IA" className="w-9 h-9 rounded-xl object-cover shadow-sm" />
             </div>
             <nav className="flex-1 overflow-y-auto py-2 flex flex-col items-center gap-0.5 px-2">
               {allNavItems.map(tab=>{
@@ -3343,9 +3467,12 @@
       const [currentAgent, setCurrentAgent] = useState(null);
       const [activeTab, setActiveTab] = useState('overview');
       const [isAgentOn, setIsAgentOn] = useState(true);
+      const [darkMode, setDarkMode] = useState(() => { try { return localStorage.getItem('pixt_dark_client') === '1'; } catch { return false; } });
       const toast = useToast();
       const primaryColor = '#c6f432';
       const borderLight = '#e2e8f0';
+
+      const toggleDark = () => setDarkMode(d => { const next = !d; try { localStorage.setItem('pixt_dark_client', next ? '1' : '0'); } catch {} return next; });
 
       const loadAgents = useCallback(async () => {
         try {
@@ -3377,12 +3504,19 @@
 
       const Icon = ICON_MAP[currentAgent.icon] || Bot;
 
+      const dark = darkMode;
+      const darkBg = dark ? { backgroundColor: '#0d1117', color: '#e5e7eb' } : {};
+      const darkHeader = dark ? 'bg-[#161b27] border-gray-700' : 'bg-white/60 backdrop-blur-xl border-gray-200/50';
+      const darkMain = dark ? 'bg-[#0d1117]' : 'bg-gray-50';
+
       return (
-        <div className="h-screen w-full flex font-sans relative overflow-hidden bg-gray-50 text-gray-900">
-          <svg className="absolute top-[-15%] left-0 w-full h-[130%] text-black opacity-5 pointer-events-none z-0 select-none" viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
-              <path d="M -100 200 C 200 400 300 -50 500 200 S 700 600 1000 400" stroke="currentColor" strokeWidth="80" fill="none" strokeLinecap="round"/>
-              <path d="M -50 600 C 250 800 450 300 700 600 S 900 900 1100 700" stroke="currentColor" strokeWidth="120" fill="none" strokeLinecap="round"/>
-          </svg>
+        <div className="h-screen w-full flex font-sans relative overflow-hidden" style={darkBg}>
+          {!dark && (
+            <svg className="absolute top-[-15%] left-0 w-full h-[130%] text-black opacity-5 pointer-events-none z-0 select-none" viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+                <path d="M -100 200 C 200 400 300 -50 500 200 S 700 600 1000 400" stroke="currentColor" strokeWidth="80" fill="none" strokeLinecap="round"/>
+                <path d="M -50 600 C 250 800 450 300 700 600 S 900 900 1100 700" stroke="currentColor" strokeWidth="120" fill="none" strokeLinecap="round"/>
+            </svg>
+          )}
 
           <Sidebar
             agents={agents}
@@ -3393,22 +3527,24 @@
             onLogout={onLogout}
             primaryColor={primaryColor}
             borderLight={borderLight}
+            darkMode={darkMode}
+            onToggleDark={toggleDark}
           />
 
-          <main className="flex-1 flex flex-col overflow-hidden relative z-10">
-            <header className="h-20 border-b border-gray-200/50 flex items-center justify-between px-8 z-10 bg-white/60 backdrop-blur-xl shrink-0">
-              <div className="flex items-center text-sm text-gray-500 font-medium">
+          <main className={`flex-1 flex flex-col overflow-hidden relative z-10 ${darkMain}`}>
+            <header className={`h-20 border-b flex items-center justify-between px-8 z-10 shrink-0 ${darkHeader}`}>
+              <div className={`flex items-center text-sm font-medium ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
                 <span>PIXT Workspace</span>
                 <span className="mx-2">/</span>
-                <span className="font-bold text-gray-900">{currentAgent.name}</span>
+                <span className={`font-bold ${dark ? 'text-gray-100' : 'text-gray-900'}`}>{currentAgent.name}</span>
               </div>
               <div className="flex items-center space-x-4">
-                <button onClick={loadAgents} title="Atualizar" className="p-2 rounded-lg hover:bg-white/80 text-gray-500 transition"><RefreshCw size={16} /></button>
+                <button onClick={loadAgents} title="Atualizar" className={`p-2 rounded-lg transition ${dark ? 'text-gray-400 hover:bg-white/10' : 'text-gray-500 hover:bg-white/80'}`}><RefreshCw size={16} /></button>
                 <button onClick={() => toggleAgent(!isAgentOn)} title={isAgentOn ? 'Clique para desligar o agente' : 'Clique para ligar o agente'} className={`flex items-center space-x-2 px-4 py-1.5 rounded-full border shadow-sm transition-all cursor-pointer hover:scale-105 ${isAgentOn ? 'border-green-200 bg-green-50 hover:border-red-200 hover:bg-red-50 group' : 'border-gray-200 bg-gray-50 hover:border-green-200 hover:bg-green-50 group'}`}>
                   <div className={`w-2 h-2 rounded-full ${isAgentOn ? 'bg-green-500 animate-pulse group-hover:bg-red-400' : 'bg-gray-400 group-hover:bg-green-500'}`}></div>
                   <span className={`text-xs font-bold ${isAgentOn ? 'text-green-700 group-hover:text-red-600' : 'text-gray-500 group-hover:text-green-600'}`}>{isAgentOn ? 'IA Ativa' : 'IA Pausada'}</span>
                 </button>
-                <span className="text-xs text-gray-500 font-medium hidden md:inline">{auth.user?.email}</span>
+                <span className={`text-xs font-medium hidden md:inline ${dark ? 'text-gray-400' : 'text-gray-500'}`}>{auth.user?.email}</span>
               </div>
             </header>
 
@@ -3423,8 +3559,8 @@
                 />
 
                 {activeTab === 'overview' && <OverviewTab agent={currentAgent} primaryColor={primaryColor} borderLight={borderLight} />}
-                {activeTab === 'pipeline' && <PipelineTab agentSlug={currentAgent.slug} title="Pipeline de Vendas" />}
-                {activeTab === 'crm' && <PipelineTab agentSlug={currentAgent.slug} title="Espelhamento de CRM" />}
+                {activeTab === 'pipeline' && <PipelineTab agentSlug={currentAgent.slug} title="Pipeline de Vendas" primaryColor={primaryColor} />}
+                {activeTab === 'crm' && <PipelineTab agentSlug={currentAgent.slug} title="Espelhamento de CRM" primaryColor={primaryColor} />}
                 {activeTab === 'inbox' && <InboxTab agent={currentAgent} primaryColor={primaryColor} />}
                 {activeTab === 'faturas' && <InvoicesTab agent={currentAgent} primaryColor={primaryColor} />}
                 {activeTab === 'calendar' && <CalendarTab agent={currentAgent} primaryColor={primaryColor} />}
@@ -3432,13 +3568,14 @@
                 {activeTab === 'scrapper' && <ScrapperTab agent={currentAgent} primaryColor={primaryColor} />}
                 {activeTab === 'builder' && <BuilderTab primaryColor={primaryColor} />}
                 {activeTab === 'logs' && <LogsTab primaryColor={primaryColor} />}
-                {activeTab === 'settings' && <SettingsTab agent={currentAgent} primaryColor={primaryColor} />}
+                {activeTab === 'settings' && <ClientSettingsView agent={currentAgent} primaryColor={primaryColor} />}
                 {activeTab === 'users' && auth.user?.role === 'admin' && <AdminPanel primaryColor={primaryColor} />}
                 {activeTab === 'revenue' && <RevenueDashboard primaryColor={primaryColor} />}
                 {activeTab === 'traffic' && <ClientTrafficTab primaryColor={primaryColor} />}
                 {activeTab === 'tasks' && <TasksTab primaryColor={primaryColor} />}
                 {activeTab === 'forecast' && <ForecastTab primaryColor={primaryColor} />}
                 {activeTab === 'leadscore' && <LeadScoreTab primaryColor={primaryColor} />}
+                {activeTab === 'playbook' && <AgentPlaybookTab agent={currentAgent} primaryColor={primaryColor} />}
               </div>
             </div>
           </main>
@@ -3449,91 +3586,135 @@
     /* =========================================================
        SIDEBAR
        ========================================================= */
-    const Sidebar = ({ agents, currentAgent, onSelectAgent, activeTab, setActiveTab, onLogout, primaryColor, borderLight }) => {
+    const Sidebar = ({ agents, currentAgent, onSelectAgent, activeTab, setActiveTab, onLogout, primaryColor, borderLight, darkMode, onToggleDark }) => {
       const [showAgents, setShowAgents] = useState(false);
+      const [collapsed, setCollapsed] = useState(false);
       const Icon = ICON_MAP[currentAgent.icon] || Bot;
+      const dark = darkMode;
+      const bg = dark ? 'bg-[#111827]' : 'bg-white/60 backdrop-blur-xl';
+      const bdr = dark ? 'border-gray-700' : '';
+      const textMuted = dark ? 'text-gray-400' : 'text-gray-400';
+      const textMain = dark ? 'text-gray-100' : 'text-gray-900';
+
+      const NavI = ({ icon, label, isActive, onClick }) => (
+        <button onClick={onClick}
+          className={`w-full flex items-center ${collapsed ? 'justify-center px-0 py-3' : 'px-4 py-3'} rounded-xl transition-all duration-200 group relative overflow-hidden shrink-0 ${isActive ? 'text-black font-bold shadow-sm' : dark ? 'text-gray-400 hover:text-gray-100 hover:bg-white/10' : 'text-gray-500 hover:text-gray-900 hover:bg-white/50'}`}
+          style={{ backgroundColor: isActive ? primaryColor : 'transparent' }}
+          title={collapsed ? label : undefined}>
+          <span className={`${collapsed ? '' : 'mr-3'} z-10 ${isActive ? 'text-black' : ''}`}>{icon}</span>
+          {!collapsed && <span className="text-sm z-10">{label}</span>}
+        </button>
+      );
+
       return (
-        <aside className="w-64 border-r flex flex-col transition-all bg-white/60 backdrop-blur-xl relative z-10 shrink-0" style={{ borderColor: borderLight }}>
-          <div className="h-20 flex items-center px-6 border-b border-gray-200/50 shrink-0 relative">
-            <button onClick={() => setShowAgents(s => !s)} className="flex items-center w-full text-left">
-              <div className="w-8 h-8 rounded-lg mr-3 flex items-center justify-center shadow-sm" style={{ backgroundColor: primaryColor }}><Icon size={18} className="text-black" /></div>
-              <div className="flex flex-col flex-1">
-                <span className="font-extrabold text-lg tracking-tight text-gray-900 leading-none">{currentAgent.name}</span>
-                <span className="text-[10px] text-gray-500 font-bold uppercase mt-1">Trocar Agente</span>
-              </div>
-              <ChevronDown size={16} className={`text-gray-400 transition-transform ${showAgents ? 'rotate-180' : ''}`} />
-            </button>
-            {showAgents && (
-              <div className="absolute top-full left-3 right-3 mt-2 bg-white rounded-2xl shadow-xl border border-gray-200 z-30 overflow-hidden">
-                {agents.map(a => {
-                  const I = ICON_MAP[a.icon] || Bot;
-                  return (
-                    <button key={a.slug} onClick={() => { onSelectAgent(a); setShowAgents(false); }} className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left ${a.slug === currentAgent.slug ? 'bg-gray-100' : ''}`}>
-                      <I size={16} className="text-gray-700" />
-                      <span className="text-sm font-bold text-gray-900">{a.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
+        <aside className={`${collapsed ? 'w-[4.5rem]' : 'w-64'} border-r flex flex-col transition-all duration-300 relative z-10 shrink-0 ${bg}`} style={{ borderColor: dark ? '#374151' : borderLight }}>
+          {/* Header */}
+          <div className={`h-20 flex items-center ${collapsed ? 'justify-center px-2' : 'px-4'} border-b shrink-0 relative`} style={{ borderColor: dark ? '#374151' : '#e2e8f0' }}>
+            {collapsed ? (
+              <img src="/pixt perfil.png" alt="Pixt IA" className="w-9 h-9 rounded-xl object-cover shadow-sm" />
+            ) : (
+              <>
+                <button onClick={() => setShowAgents(s => !s)} className="flex items-center w-full text-left">
+                  <img src="/pixt perfil.png" alt="Pixt IA" className="w-8 h-8 rounded-lg object-cover shadow-sm mr-3 shrink-0" />
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className={`font-extrabold text-base tracking-tight leading-none truncate ${textMain}`}>{currentAgent.name}</span>
+                    <span className={`text-[10px] font-bold uppercase mt-1 ${textMuted}`}>Trocar Agente</span>
+                  </div>
+                  <ChevronDown size={16} className={`${textMuted} transition-transform shrink-0 ${showAgents ? 'rotate-180' : ''}`} />
+                </button>
+                {showAgents && (
+                  <div className={`absolute top-full left-2 right-2 mt-2 ${dark ? 'bg-[#1f2937] border-gray-600' : 'bg-white border-gray-200'} rounded-2xl shadow-xl border z-30 overflow-hidden`}>
+                    {agents.map(a => {
+                      const I = ICON_MAP[a.icon] || Bot;
+                      return (
+                        <button key={a.slug} onClick={() => { onSelectAgent(a); setShowAgents(false); }} className={`w-full flex items-center gap-3 px-4 py-3 text-left ${a.slug === currentAgent.slug ? (dark ? 'bg-gray-700' : 'bg-gray-100') : (dark ? 'hover:bg-gray-700' : 'hover:bg-gray-50')}`}>
+                          <I size={16} className={dark ? 'text-gray-300' : 'text-gray-700'} />
+                          <span className={`text-sm font-bold ${dark ? 'text-gray-100' : 'text-gray-900'}`}>{a.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
-          <div className="p-4 flex-1 overflow-y-auto">
-            <nav className="space-y-1.5">
-              <NavItem icon={<TrendingUp size={18} />} label="Visão Geral" isActive={activeTab === 'overview'} onClick={() => setActiveTab('overview')} primaryColor={primaryColor} />
+
+          {/* Collapse toggle */}
+          <button onClick={() => setCollapsed(c => !c)}
+            className={`absolute top-5 -right-3 z-50 w-6 h-6 rounded-full border shadow-md flex items-center justify-center transition-all hover:scale-110 ${dark ? 'bg-[#1f2937] border-gray-600 text-gray-300' : 'bg-white border-gray-200 text-gray-500'}`}>
+            {collapsed ? <ChevronRight size={12}/> : <ChevronLeft size={12}/>}
+          </button>
+
+          <div className={`${collapsed ? 'p-2' : 'p-4'} flex-1 overflow-y-auto`}>
+            <nav className={`${collapsed ? 'space-y-1 flex flex-col items-center' : 'space-y-1.5'}`}>
+              <NavI icon={<TrendingUp size={18} />} label="Visão Geral" isActive={activeTab === 'overview'} onClick={() => setActiveTab('overview')} />
 
               {currentAgent.slug === 'vendas' && (
                 <>
-                  <NavItem icon={<KanbanSquare size={18} />} label="Pipeline de Vendas" isActive={activeTab === 'pipeline'} onClick={() => setActiveTab('pipeline')} primaryColor={primaryColor} />
-                  <NavItem icon={<Inbox size={18} />} label="Conversas (Intenções)" isActive={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} primaryColor={primaryColor} />
-                  <NavItem icon={<Receipt size={18} />} label="Pagamentos & Faturas" isActive={activeTab === 'faturas'} onClick={() => setActiveTab('faturas')} primaryColor={primaryColor} />
+                  <NavI icon={<KanbanSquare size={18} />} label="Pipeline de Vendas" isActive={activeTab === 'pipeline'} onClick={() => setActiveTab('pipeline')} />
+                  <NavI icon={<Inbox size={18} />} label="Conversas (Intenções)" isActive={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} />
+                  <NavI icon={<Receipt size={18} />} label="Pagamentos & Faturas" isActive={activeTab === 'faturas'} onClick={() => setActiveTab('faturas')} />
                 </>
               )}
 
               {currentAgent.slug === 'leadflow' && (
                 <>
-                  <NavItem icon={<Users size={18} />} label="Gestão CRM" isActive={activeTab === 'crm'} onClick={() => setActiveTab('crm')} primaryColor={primaryColor} />
-                  <NavItem icon={<Inbox size={18} />} label="Conversas (Intenções)" isActive={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} primaryColor={primaryColor} />
+                  <NavI icon={<Users size={18} />} label="Gestão CRM" isActive={activeTab === 'crm'} onClick={() => setActiveTab('crm')} />
+                  <NavI icon={<Inbox size={18} />} label="Conversas (Intenções)" isActive={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} />
                 </>
               )}
 
               {currentAgent.slug === 'booker' && (
                 <>
-                  <NavItem icon={<Calendar size={18} />} label="Agenda & Meetings" isActive={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} primaryColor={primaryColor} />
-                  <NavItem icon={<Inbox size={18} />} label="Conversas (Intenções)" isActive={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} primaryColor={primaryColor} />
+                  <NavI icon={<Calendar size={18} />} label="Agenda & Meetings" isActive={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} />
+                  <NavI icon={<Inbox size={18} />} label="Conversas (Intenções)" isActive={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} />
                 </>
               )}
 
               {currentAgent.slug === 'pixt-bdr' && (
                 <>
-                  <NavItem icon={<MapPin size={18} />} label="Scrapper de Leads" isActive={activeTab === 'scrapper'} onClick={() => setActiveTab('scrapper')} primaryColor={primaryColor} />
-                  <NavItem icon={<KanbanSquare size={18} />} label="Pipeline Importado" isActive={activeTab === 'pipeline'} onClick={() => setActiveTab('pipeline')} primaryColor={primaryColor} />
+                  <NavI icon={<MapPin size={18} />} label="Scrapper de Leads" isActive={activeTab === 'scrapper'} onClick={() => setActiveTab('scrapper')} />
+                  <NavI icon={<KanbanSquare size={18} />} label="Pipeline Importado" isActive={activeTab === 'pipeline'} onClick={() => setActiveTab('pipeline')} />
                 </>
               )}
 
               {currentAgent.slug === 'custom' && (
                 <>
-                  <NavItem icon={<Workflow size={18} />} label="Builder Visual" isActive={activeTab === 'builder'} onClick={() => setActiveTab('builder')} primaryColor={primaryColor} />
-                  <NavItem icon={<History size={18} />} label="Execuções & Logs" isActive={activeTab === 'logs'} onClick={() => setActiveTab('logs')} primaryColor={primaryColor} />
+                  <NavI icon={<Workflow size={18} />} label="Builder Visual" isActive={activeTab === 'builder'} onClick={() => setActiveTab('builder')} />
+                  <NavI icon={<History size={18} />} label="Execuções & Logs" isActive={activeTab === 'logs'} onClick={() => setActiveTab('logs')} />
                 </>
               )}
 
-              <div className="pt-4 pb-2 shrink-0"><p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-3">Plataforma</p></div>
-              <NavItem icon={<TrendingUp size={18} />} label="Tráfego & Mídias" isActive={activeTab === 'traffic'} onClick={() => setActiveTab('traffic')} primaryColor={primaryColor} />
-              <NavItem icon={<BarChart3 size={18} />} label="Receita" isActive={activeTab === 'revenue'} onClick={() => setActiveTab('revenue')} primaryColor={primaryColor} />
-              <NavItem icon={<CheckCircle2 size={18} />} label="Gestão de Tarefas" isActive={activeTab === 'tasks'} onClick={() => setActiveTab('tasks')} primaryColor={primaryColor} />
-              <NavItem icon={<Cpu size={18} />} label="DRE Projetado" isActive={activeTab === 'forecast'} onClick={() => setActiveTab('forecast')} primaryColor={primaryColor} />
-              <NavItem icon={<Target size={18} />} label="Lead Scoring" isActive={activeTab === 'leadscore'} onClick={() => setActiveTab('leadscore')} primaryColor={primaryColor} />
+              {!collapsed && <div className="pt-4 pb-2 shrink-0"><p className="text-[10px] font-bold uppercase tracking-wider px-3" style={{color:textMuted === 'text-gray-400' ? '#9ca3af' : '#9ca3af'}}>Plataforma</p></div>}
+              {collapsed && <div className="w-8 h-px bg-gray-200 dark:bg-gray-700 my-2 shrink-0"/>}
+              <NavI icon={<TrendingUp size={18} />} label="Tráfego & Mídias" isActive={activeTab === 'traffic'} onClick={() => setActiveTab('traffic')} />
+              <NavI icon={<BarChart3 size={18} />} label="Receita" isActive={activeTab === 'revenue'} onClick={() => setActiveTab('revenue')} />
+              <NavI icon={<CheckCircle2 size={18} />} label="Gestão de Tarefas" isActive={activeTab === 'tasks'} onClick={() => setActiveTab('tasks')} />
+              <NavI icon={<Cpu size={18} />} label="DRE Projetado" isActive={activeTab === 'forecast'} onClick={() => setActiveTab('forecast')} />
+              <NavI icon={<Target size={18} />} label="Lead Scoring" isActive={activeTab === 'leadscore'} onClick={() => setActiveTab('leadscore')} />
 
-              <div className="pt-4 pb-2 shrink-0"><p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-3">Administração</p></div>
+              {!collapsed && <div className="pt-4 pb-2 shrink-0"><p className="text-[10px] font-bold uppercase tracking-wider px-3" style={{color:'#9ca3af'}}>Administração</p></div>}
+              {collapsed && <div className="w-8 h-px bg-gray-200 my-2 shrink-0"/>}
               {auth.user?.role === 'admin' && (
-                <NavItem icon={<Users size={18} />} label="Gerenciar Usuários" isActive={activeTab === 'users'} onClick={() => setActiveTab('users')} primaryColor={primaryColor} />
+                <NavI icon={<Users size={18} />} label="Gerenciar Usuários" isActive={activeTab === 'users'} onClick={() => setActiveTab('users')} />
               )}
-              <NavItem icon={<Settings size={18} />} label="Configurações" isActive={activeTab === 'settings'} onClick={() => setActiveTab('settings')} primaryColor={primaryColor} />
+              <NavI icon={<Settings size={18} />} label="Configurações" isActive={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
             </nav>
           </div>
-          <div className="p-4 border-t border-gray-200/50 shrink-0">
-            <button onClick={onLogout} className="w-full flex items-center px-4 py-3 rounded-xl text-gray-500 hover:bg-white/80 hover:text-gray-900 transition-all font-medium">
-              <LogOut size={18} className="mr-3" /><span className="text-sm">Sair</span>
+          <div className={`${collapsed ? 'p-2 flex flex-col items-center gap-1' : 'p-4'} border-t shrink-0`} style={{ borderColor: dark ? '#374151' : '#e2e8f0' }}>
+            {onToggleDark && (
+              <button onClick={onToggleDark}
+                className={`${collapsed ? 'w-10 h-10 rounded-xl flex items-center justify-center' : 'w-full flex items-center px-4 py-3 rounded-xl font-medium mb-1'} transition-all ${dark ? 'bg-white/10 text-yellow-300 hover:bg-white/20' : 'text-gray-500 hover:bg-white/80 hover:text-gray-900'}`}
+                title={dark ? 'Modo claro' : 'Modo escuro'}>
+                {dark ? <Sun size={18} className={collapsed ? '' : 'mr-3'}/> : <Moon size={18} className={collapsed ? '' : 'mr-3'}/>}
+                {!collapsed && <span className="text-sm">{dark ? 'Modo Claro' : 'Modo Escuro'}</span>}
+              </button>
+            )}
+            <button onClick={onLogout}
+              className={`${collapsed ? 'w-10 h-10 rounded-xl flex items-center justify-center' : 'w-full flex items-center px-4 py-3 rounded-xl font-medium'} transition-all ${dark ? 'text-gray-400 hover:bg-white/10 hover:text-gray-100' : 'text-gray-500 hover:bg-white/80 hover:text-gray-900'}`}
+              title={collapsed ? 'Sair' : undefined}>
+              <LogOut size={18} className={collapsed ? '' : 'mr-3'} />
+              {!collapsed && <span className="text-sm">Sair</span>}
             </button>
           </div>
         </aside>
@@ -3560,6 +3741,8 @@
         forecast: 'DRE Projetado',
         leadscore: 'Lead Scoring Automático',
         reports: 'Relatórios Automáticos',
+        playbook: 'Playbook do Agente',
+        traffic: 'Tráfego & Mídias',
       };
       return (
         <div className="mb-8 border-b border-gray-200/50 pb-6 flex justify-between items-end shrink-0">
@@ -3838,7 +4021,8 @@
     /* =========================================================
        PIPELINE TAB (Kanban com drag-and-drop + estágios configuráveis)
        ========================================================= */
-    const PipelineTab = ({ agentSlug }) => {
+    const PipelineTab = ({ agentSlug, primaryColor }) => {
+      const pc = primaryColor || '#c6f432';
       const [leads, setLeads] = useState([]);
       const [loading, setLoading] = useState(true);
       const [showNew, setShowNew] = useState(false);
@@ -3847,8 +4031,56 @@
       const [draggedId, setDraggedId] = useState(null);
       const [dragOverStage, setDragOverStage] = useState(null);
       const [selectedLead, setSelectedLead] = useState(null);
+      const [openColorStage, setOpenColorStage] = useState(null);
+      const colorPickerRefs = useRef({});
       const { stages, saveStages } = usePipelineStages(agentSlug);
+      const updStage = (id, patch) => saveStages(stages.map(s => s.id === id ? {...s, ...patch} : s));
       const toast = useToast();
+
+      // ── Calendar date filter ──
+      const [showPipeCal, setShowPipeCal] = useState(false);
+      const [pipeCalMonth, setPipeCalMonth] = useState(() => { const d = new Date(); d.setDate(1); return d; });
+      const [pipeFrom, setPipeFrom] = useState(null);
+      const [pipeTo, setPipeTo] = useState(null);
+      const pipeCalRef = useRef(null);
+
+      useEffect(() => {
+        const h = (e) => { if (pipeCalRef.current && !pipeCalRef.current.contains(e.target)) setShowPipeCal(false); };
+        document.addEventListener('mousedown', h);
+        return () => document.removeEventListener('mousedown', h);
+      }, []);
+
+      const fmtPD = d => d ? d.toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit'}) : '--';
+      const pipeDays = (() => {
+        const yr = pipeCalMonth.getFullYear(), mo = pipeCalMonth.getMonth();
+        const first = new Date(yr, mo, 1), last = new Date(yr, mo+1, 0);
+        const days = [];
+        for (let i = 0; i < first.getDay(); i++) days.push(null);
+        for (let d = 1; d <= last.getDate(); d++) days.push(new Date(yr, mo, d));
+        return days;
+      })();
+      const handlePipeDay = (day) => {
+        if (!day) return;
+        if (!pipeFrom || (pipeFrom && pipeTo)) { setPipeFrom(day); setPipeTo(null); }
+        else { if (day < pipeFrom) { setPipeTo(pipeFrom); setPipeFrom(day); } else { setPipeTo(day); } setShowPipeCal(false); }
+      };
+      const isDayInRange = (day) => {
+        if (!day || !pipeFrom) return false;
+        if (!pipeTo) return day.toDateString() === pipeFrom.toDateString();
+        return day >= pipeFrom && day <= pipeTo;
+      };
+      const clearPipeCal = () => { setPipeFrom(null); setPipeTo(null); };
+
+      const filterLeadsByDate = (list) => {
+        if (!pipeFrom) return list;
+        return list.filter(l => {
+          const d = l.created_at ? new Date(l.created_at) : null;
+          if (!d) return true;
+          const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+          if (!pipeTo) return day.toDateString() === pipeFrom.toDateString();
+          return day >= pipeFrom && day <= pipeTo;
+        });
+      };
 
       const load = useCallback(async () => {
         setLoading(true);
@@ -3858,6 +4090,15 @@
       }, [agentSlug, toast]);
 
       useEffect(() => { load(); }, [load]);
+
+      useEffect(() => {
+        const handler = (e) => {
+          const open = Object.entries(colorPickerRefs.current).find(([id]) => id === openColorStage);
+          if (open && !open[1]?.contains(e.target)) setOpenColorStage(null);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+      }, [openColorStage]);
 
       const onDragStart = (id) => setDraggedId(id);
       const onDragEnd = () => { setDraggedId(null); setDragOverStage(null); };
@@ -3909,53 +4150,102 @@
       if (loading) return <Loading />;
 
       return (
-        <div className="animate-in fade-in duration-500 flex flex-col gap-3 shrink-0">
+        <div className="animate-in fade-in duration-500 flex flex-col gap-3" style={{minHeight:'calc(100vh - 220px)'}}>
           <div className="flex justify-between items-center shrink-0">
-            <p className="text-sm text-gray-500 font-medium">{leads.length} leads · {stages.length} etapas</p>
+            <p className="text-sm text-gray-500 font-medium">
+              {pipeFrom ? filterLeadsByDate(leads).length : leads.length} leads · {stages.length} etapas
+            </p>
             <div className="flex items-center gap-2 shrink-0">
+              {/* Calendar date filter */}
+              <div className="relative" ref={pipeCalRef}>
+                <button onClick={() => setShowPipeCal(v => !v)}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-bold transition-all ${pipeFrom ? 'border-gray-700 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}>
+                  <Calendar size={14}/>
+                  {pipeFrom ? `${fmtPD(pipeFrom)} → ${fmtPD(pipeTo || pipeFrom)}` : 'Período'}
+                  {pipeFrom && <span onClick={e=>{e.stopPropagation();clearPipeCal();}} className="ml-1 opacity-70 hover:opacity-100"><X size={12}/></span>}
+                </button>
+                {showPipeCal && (
+                  <div className="absolute top-full right-0 mt-1 z-30 bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 w-72" onClick={e=>e.stopPropagation()}>
+                    <div className="flex items-center justify-between mb-3">
+                      <button onClick={() => setPipeCalMonth(m => { const d=new Date(m); d.setMonth(d.getMonth()-1); d.setDate(1); return d; })}
+                        className="p-1 rounded-lg hover:bg-gray-100 text-gray-500"><ChevronLeft size={16}/></button>
+                      <span className="text-sm font-bold text-gray-800 capitalize">
+                        {pipeCalMonth.toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}
+                      </span>
+                      <button onClick={() => setPipeCalMonth(m => { const d=new Date(m); d.setMonth(d.getMonth()+1); d.setDate(1); return d; })}
+                        className="p-1 rounded-lg hover:bg-gray-100 text-gray-500"><ChevronRight size={16}/></button>
+                    </div>
+                    <div className="grid grid-cols-7 gap-0.5 mb-1">
+                      {['D','S','T','Q','Q','S','S'].map((d,i)=>(<div key={i} className="text-center text-[10px] font-black text-gray-400 uppercase py-1">{d}</div>))}
+                    </div>
+                    <div className="grid grid-cols-7 gap-0.5">
+                      {pipeDays.map((day,i) => (
+                        <button key={i} onClick={() => handlePipeDay(day)} disabled={!day}
+                          className={`w-full aspect-square rounded-lg text-xs font-bold transition-all flex items-center justify-center
+                            ${!day ? 'opacity-0 pointer-events-none' : ''}
+                            ${day && isDayInRange(day) ? 'bg-gray-900 text-white' : ''}
+                            ${day && !isDayInRange(day) ? 'hover:bg-gray-100 text-gray-700' : ''}`}>
+                          {day ? day.getDate() : ''}
+                        </button>
+                      ))}
+                    </div>
+                    {pipeFrom && (
+                      <button onClick={clearPipeCal} className="mt-3 w-full text-xs font-bold text-gray-500 hover:text-gray-800 flex items-center justify-center gap-1.5 py-1.5 border border-gray-200 rounded-xl hover:bg-gray-50 transition">
+                        <X size={11}/> Limpar período
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
               <button onClick={() => setShowStageConfig(true)} className="px-3 py-2 rounded-xl border border-gray-200 bg-white font-bold text-sm flex items-center gap-2 hover:bg-gray-50 transition">
                 <Settings size={14}/> Configurar Funil
               </button>
-              <button onClick={() => setShowNew(true)} className="px-4 py-2 rounded-xl bg-black text-[#c6f432] font-bold text-sm flex items-center gap-2 hover:bg-gray-800 transition">
+              <button onClick={() => setShowNew(true)} className="px-4 py-2 rounded-xl font-bold text-sm text-black flex items-center gap-2 hover:opacity-90 transition" style={{backgroundColor:pc}}>
                 <Plus size={16}/> Novo Lead
               </button>
             </div>
           </div>
 
-          {/* Flat seamless pipeline board */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden shrink-0">
-            {/* Stage headers */}
-            <div className="flex border-b border-gray-100" style={{minWidth: stages.length * 260}}>
-              {stages.map((stage, si) => {
-                const dot = COLOR_HEX[stage.color] || '#9ca3af';
-                const headerBg = STAGE_HEADER_BG?.[stage.color] || dot;
-                const count = leads.filter(l => l.stage === stage.id).length;
-                return (
-                  <div key={stage.id} className={`flex-none border-r border-black/5 last:border-r-0`}
-                    style={{width:260, backgroundColor: headerBg}}>
-                    <div className="flex items-center justify-between px-4 py-3">
+          {/* Pipeline — colunas coloridas */}
+          <div className="flex gap-4 overflow-x-auto pb-4 flex-1">
+            {stages.map((stage) => {
+              const items = filterLeadsByDate(leads.filter(l => l.stage === stage.id));
+              const cc = STAGE_COLORS[stage.color] || STAGE_COLORS.gray;
+              return (
+                <div key={stage.id}
+                  onDragOver={(e) => onDragOver(e, stage.id)}
+                  onDragLeave={() => setDragOverStage(null)}
+                  onDrop={(e) => onDrop(e, stage.id)}
+                  className={`flex-none w-72 rounded-2xl border flex flex-col overflow-hidden shrink-0 transition-all ${cc} ${dragOverStage === stage.id ? 'drop-target' : ''}`}
+                  style={{minHeight:'520px', maxHeight:'calc(100vh - 200px)'}}>
+                  <div className="shrink-0 relative" ref={el => colorPickerRefs.current[stage.id] = el}>
+                    <div className="p-4 flex items-center justify-between" style={{backgroundColor: STAGE_HEADER_BG[stage.color] || '#6b7280'}}>
                       <div>
                         <h3 className="font-bold text-white text-sm">{stage.title}</h3>
                         {stage.sub && <p className="text-[10px] text-white/70 font-medium">{stage.sub}</p>}
                       </div>
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white/20 text-white">{count}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold px-2 py-0.5 rounded bg-white/20 text-white">{items.length}</span>
+                        <button onClick={e=>{e.stopPropagation();setOpenColorStage(openColorStage===stage.id?null:stage.id);}}
+                          className="p-1 rounded hover:bg-white/20 transition-colors text-white/80 hover:text-white">
+                          <ChevronDown size={12}/>
+                        </button>
+                      </div>
                     </div>
+                    {openColorStage===stage.id&&(
+                      <div className="absolute top-full left-0 z-20 bg-white rounded-xl shadow-xl border border-gray-100 p-3 mt-1">
+                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-2">Cor da etapa</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {Object.entries(STAGE_HEADER_BG).map(([c,hex])=>(
+                            <button key={c} onClick={()=>{updStage(stage.id,{color:c});setOpenColorStage(null);}}
+                              className={`w-5 h-5 rounded-full border-2 transition-all ${stage.color===c?'border-gray-700 scale-110':'border-transparent hover:scale-105'}`}
+                              style={{backgroundColor:hex}} title={c}/>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                );
-              })}
-            </div>
-
-            {/* Cards area — all white, continuous */}
-            <div className="flex overflow-x-auto" style={{minWidth: stages.length * 260, minHeight: 440}}>
-              {stages.map((stage, si) => {
-                const items = leads.filter(l => l.stage === stage.id);
-                return (
-                  <div key={stage.id}
-                    onDragOver={(e) => onDragOver(e, stage.id)}
-                    onDragLeave={() => setDragOverStage(null)}
-                    onDrop={(e) => onDrop(e, stage.id)}
-                    className={`flex-none border-r border-gray-100 last:border-r-0 p-3 space-y-2.5 transition-colors ${dragOverStage === stage.id ? 'bg-gray-50' : 'bg-white'}`}
-                    style={{width:260, minHeight:440}}>
+                  <div className="p-3 space-y-2.5 overflow-y-auto flex-1">
                     {items.map(l => (
                       <FlatPipelineCard
                         key={l.id}
@@ -3972,9 +4262,9 @@
                       <p className="text-xs text-gray-300 italic text-center py-8 font-medium">Sem leads nesta etapa</p>
                     )}
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              );
+            })}
           </div>
 
           {showNew && <NewLeadModal stages={stages} onClose={() => setShowNew(false)} onCreate={createLead} />}
@@ -5472,8 +5762,19 @@
       };
       const removeKbDoc = (id) => { const next = kb.filter(d=>d.id!==id); setKb(next); localStorage.setItem('pixt_kb_'+agent.slug, JSON.stringify(next)); };
 
-      const [sla, setSla] = useState(() => { try { return JSON.parse(localStorage.getItem('pixt_sla_'+agent.slug)||'null') || { primeiro_contato:'2', follow_up:'24', resposta_humano:'1', alerta_atraso:'80' }; } catch { return { primeiro_contato:'2', follow_up:'24', resposta_humano:'1', alerta_atraso:'80' }; } });
+      const [sla, setSla] = useState(() => { try { return JSON.parse(localStorage.getItem('pixt_sla_'+agent.slug)||'null') || { primeiro_contato:'2', resposta_humano:'1', alerta_atraso:'80' }; } catch { return { primeiro_contato:'2', resposta_humano:'1', alerta_atraso:'80' }; } });
       const saveSla = (v) => { setSla(v); localStorage.setItem('pixt_sla_'+agent.slug, JSON.stringify(v)); toast('Configurações de tempo salvas!', 'success'); };
+
+      /* ── Follow-ups configuráveis ── */
+      const defFollowup = { time: '24', unit: 'h', message: '' };
+      const [followups, setFollowups] = useState(() => {
+        try { const f = JSON.parse(localStorage.getItem('pixt_followups_'+agent.slug)||'null'); return f || [{ ...defFollowup }, { ...defFollowup, time:'48' }, { ...defFollowup, time:'72' }]; } catch { return [{ ...defFollowup }, { ...defFollowup, time:'48' }, { ...defFollowup, time:'72' }]; }
+      });
+      const saveFollowups = (v) => { setFollowups(v); localStorage.setItem('pixt_followups_'+agent.slug, JSON.stringify(v)); toast('Follow-ups salvos!', 'success'); };
+      const updateFollowup = (i, k, v) => setFollowups(fs => fs.map((f, idx) => idx===i ? {...f, [k]:v} : f));
+      const addFollowup = () => setFollowups(fs => [...fs, { ...defFollowup, time: String((fs.length+1)*24) }]);
+      const removeFollowup = (i) => setFollowups(fs => fs.filter((_,idx) => idx!==i));
+      const ORDINALS = ['1º Follow-up','2º Follow-up','3º Follow-up','4º Follow-up','5º Follow-up','6º Follow-up','7º Follow-up'];
 
       const load = useCallback(async () => {
         setLoading(true);
@@ -5501,8 +5802,7 @@
       const STABS = [
         {id:'presenca',  l:'Presença Digital'},
         {id:'agente',    l:'Configurações do Agente'},
-        {id:'kb',        l:'Base de Conhecimento'},
-        {id:'tempo',     l:'Tempo de Resposta'},
+        {id:'followup',  l:'Follow-up'},
         {id:'icp',       l:'ICP — Perfil Ideal'},
       ];
 
@@ -5543,70 +5843,70 @@
 
           {settingsTab === 'agente' && (
             <div className="max-w-2xl space-y-6">
-              <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-8 shadow-sm border border-gray-200">
-                <div className="flex items-center gap-3 mb-6"><div className="p-2.5 rounded-lg" style={{backgroundColor:primaryColor}}><Bot size={20} className="text-black"/></div><div><h2 className="text-xl font-bold text-gray-900">Script do Agente</h2><p className="text-sm text-gray-500">Instruções que definem como o agente se comporta.</p></div></div>
-                <textarea value={settings.script||''} onChange={e=>set('script',e.target.value)} rows={6} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none resize-none font-mono text-sm focus:border-gray-400" placeholder="Ex: Você é um especialista em vendas da empresa X. Seu objetivo é..."/>
+              {/* Script */}
+              <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-8 shadow-sm border border-gray-200 min-h-[220px]">
+                <div className="flex items-center gap-3 mb-5"><div className="p-2.5 rounded-lg" style={{backgroundColor:primaryColor}}><Bot size={20} className="text-black"/></div><div><h2 className="text-xl font-bold text-gray-900">Script do Agente</h2><p className="text-sm text-gray-500">Instruções que definem como o agente se comporta.</p></div></div>
+                <textarea value={settings.script||''} onChange={e=>set('script',e.target.value)} rows={5} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none resize-none font-mono text-sm focus:border-gray-400" placeholder="Ex: Você é um especialista em vendas da empresa X. Seu objetivo é..."/>
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-6 shadow-sm border border-gray-200">
-                  <h3 className="font-bold text-gray-900 mb-4">Configurações de Resposta</h3>
-                  <div className="space-y-4">
-                    <div><label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Máx. linhas por resposta</label>
-                      <select value={settings.max_lines||'3'} onChange={e=>set('max_lines',e.target.value)} className="w-full px-3 py-2.5 border rounded-xl outline-none text-sm font-medium bg-white">
-                        {['1','2','3','4','5','6','8','10'].map(n=><option key={n} value={n}>{n} linhas</option>)}
-                      </select></div>
-                    <div><label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Tipo de Linguagem</label>
-                      <select value={settings.language_type||'casual'} onChange={e=>set('language_type',e.target.value)} className="w-full px-3 py-2.5 border rounded-xl outline-none text-sm font-medium bg-white">
-                        <option value="casual">Casual e amigável</option>
-                        <option value="formal">Formal e profissional</option>
-                        <option value="technical">Técnico e direto</option>
-                      </select></div>
-                  </div>
-                </div>
-                <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-6 shadow-sm border border-gray-200">
-                  <h3 className="font-bold text-gray-900 mb-4">Follow-ups Automáticos</h3>
-                  <div className="space-y-4">
-                    <div><label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Qtd. de lembretes</label>
-                      <input type="number" value={settings.reminders_count||'3'} onChange={e=>set('reminders_count',e.target.value)} min="0" max="10" className="w-full px-3 py-2.5 border rounded-xl outline-none text-sm font-medium"/></div>
-                    <div><label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Intervalos</label>
-                      <input value={settings.reminders_times||''} onChange={e=>set('reminders_times',e.target.value)} className="w-full px-3 py-2.5 border rounded-xl outline-none text-sm font-medium" placeholder="24h, 1h, 15m"/></div>
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-end">
-                <button onClick={save} disabled={saving} className="px-8 py-4 rounded-xl font-bold text-black hover:scale-105 transition-all flex items-center gap-2 disabled:opacity-60" style={{backgroundColor:primaryColor}}>
-                  {saving?<Loader2 size={16} className="animate-spin"/>:<Save size={16}/>} Salvar Configurações
-                </button>
-              </div>
-            </div>
-          )}
 
-          {settingsTab === 'kb' && (
-            <div className="max-w-2xl space-y-6">
-              <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-8 shadow-sm border border-gray-200">
-                <div className="flex items-center justify-between mb-6">
+              {/* Configurações de Resposta */}
+              <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-8 shadow-sm border border-gray-200 min-h-[220px]">
+                <div className="flex items-center gap-3 mb-5"><div className="p-2.5 bg-blue-100 text-blue-700 rounded-lg"><MessageSquare size={20}/></div><div><h2 className="text-xl font-bold text-gray-900">Configurações de Resposta</h2><p className="text-sm text-gray-500">Comportamento e velocidade do agente.</p></div></div>
+                <div className="space-y-4">
+                  <div><label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Velocidade de Resposta do Agente</label>
+                    <p className="text-xs text-gray-400 mb-2">Em quanto tempo (segundos) o agente irá responder as mensagens.</p>
+                    <select value={settings.response_time||'5'} onChange={e=>set('response_time',e.target.value)} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl outline-none text-sm font-medium bg-white focus:border-blue-400">
+                      <option value="3">3 segundos — Ultra rápido</option>
+                      <option value="5">5 segundos — Muito rápido</option>
+                      <option value="10">10 segundos — Rápido</option>
+                      <option value="15">15 segundos — Normal</option>
+                      <option value="20">20 segundos — Moderado</option>
+                      <option value="30">30 segundos — Pausado</option>
+                      <option value="45">45 segundos — Lento</option>
+                      <option value="60">60 segundos — Muito lento</option>
+                      <option value="120">2 minutos — Deliberativo</option>
+                    </select>
+                  </div>
+                  <div><label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Máx. linhas por resposta</label>
+                    <select value={settings.max_lines||'3'} onChange={e=>set('max_lines',e.target.value)} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl outline-none text-sm font-medium bg-white focus:border-blue-400">
+                      {['1','2','3','4','5','6','8','10'].map(n=><option key={n} value={n}>{n} linhas</option>)}
+                    </select>
+                  </div>
+                  <div><label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Tipo de Linguagem</label>
+                    <select value={settings.language_type||'casual'} onChange={e=>set('language_type',e.target.value)} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl outline-none text-sm font-medium bg-white focus:border-blue-400">
+                      <option value="casual">Casual e amigável</option>
+                      <option value="formal">Formal e profissional</option>
+                      <option value="technical">Técnico e direto</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Base de Conhecimento */}
+              <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-8 shadow-sm border border-gray-200 min-h-[220px]">
+                <div className="flex items-center justify-between mb-5">
                   <div className="flex items-center gap-3">
                     <div className="p-2.5 bg-indigo-100 text-indigo-700 rounded-lg"><FileText size={20}/></div>
-                    <div><h2 className="text-xl font-bold text-gray-900">Base de Conhecimento</h2><p className="text-sm text-gray-500">Documentos e materiais que o agente utiliza como referência.</p></div>
+                    <div><h2 className="text-xl font-bold text-gray-900">Base de Conhecimento</h2><p className="text-sm text-gray-500">Documentos que o agente usa como referência.</p></div>
                   </div>
                   <button onClick={() => kbFileRef.current?.click()}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm text-black hover:opacity-80 transition-all"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-sm text-black hover:opacity-80 transition-all"
                     style={{ backgroundColor: primaryColor }}>
-                    <UploadCloud size={16}/> Importar Documento
+                    <UploadCloud size={15}/> Importar
                   </button>
                   <input ref={kbFileRef} type="file" className="hidden" accept=".pdf,.txt,.doc,.docx,.md" onChange={addKbDoc}/>
                 </div>
                 {kb.length === 0 ? (
-                  <div className="text-center py-12 text-gray-300">
-                    <FileText size={40} className="mx-auto mb-3 opacity-40"/>
-                    <p className="font-semibold text-gray-400">Nenhum documento importado.</p>
-                    <p className="text-sm mt-1">Importe PDFs, TXTs ou DOCXs para enriquecer o agente.</p>
+                  <div className="text-center py-10 text-gray-300">
+                    <FileText size={36} className="mx-auto mb-2 opacity-40"/>
+                    <p className="font-semibold text-gray-400 text-sm">Nenhum documento importado.</p>
+                    <p className="text-xs text-gray-300 mt-1">Suporta PDF, TXT, DOC, DOCX, MD</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
                     {kb.map(doc => (
                       <div key={doc.id} className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-100 rounded-xl hover:border-gray-200 transition-colors">
-                        <div className="p-2 bg-indigo-50 rounded-lg shrink-0"><FileText size={16} className="text-indigo-600"/></div>
+                        <div className="p-1.5 bg-indigo-50 rounded-lg shrink-0"><FileText size={14} className="text-indigo-600"/></div>
                         <div className="flex-1 min-w-0">
                           <p className="font-bold text-sm text-gray-800 truncate">{doc.name}</p>
                           <p className="text-[10px] text-gray-400">{doc.size} · {new Date(doc.ts).toLocaleDateString('pt-BR')}</p>
@@ -5617,38 +5917,77 @@
                   </div>
                 )}
               </div>
+
+              <div className="flex justify-end">
+                <button onClick={save} disabled={saving} className="px-8 py-4 rounded-xl font-bold text-black hover:scale-105 transition-all flex items-center gap-2 disabled:opacity-60" style={{backgroundColor:primaryColor}}>
+                  {saving?<Loader2 size={16} className="animate-spin"/>:<Save size={16}/>} Salvar Configurações
+                </button>
+              </div>
             </div>
           )}
 
-          {settingsTab === 'tempo' && (
-            <div className="max-w-2xl space-y-6">
-              <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-8 shadow-sm border border-gray-200">
+          {settingsTab === 'followup' && (
+            <div className="max-w-2xl space-y-4">
+              <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-6 shadow-sm border border-gray-200">
                 <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2.5 bg-orange-100 text-orange-700 rounded-lg"><Clock size={20}/></div>
-                  <div><h2 className="text-xl font-bold text-gray-900">Tempo de Resposta (SLA)</h2><p className="text-sm text-gray-500">Defina os tempos máximos esperados para cada etapa do atendimento.</p></div>
+                  <div className="p-2.5 rounded-lg" style={{backgroundColor:primaryColor}}><Send size={18} className="text-black"/></div>
+                  <div><h2 className="text-xl font-bold text-gray-900">Configuração de Follow-ups</h2><p className="text-sm text-gray-500">Defina quando e como o agente vai retomar contato com leads sem resposta.</p></div>
                 </div>
-                <div className="space-y-5">
-                  {[
-                    { k:'primeiro_contato', l:'Primeiro Contato (h)', desc:'Tempo máximo para o agente iniciar a conversa após o lead entrar.' },
-                    { k:'follow_up',        l:'Follow-up Automático (h)', desc:'Intervalo entre lembretes automáticos para leads sem resposta.' },
-                    { k:'resposta_humano',  l:'Resposta Humana (h)', desc:'Tempo máximo para um atendente humano responder quando acionado.' },
-                    { k:'alerta_atraso',    l:'Alerta de Atraso (%)', desc:'Percentual do SLA atingido antes de disparar um alerta.' },
-                  ].map(f => (
-                    <div key={f.k} className="bg-gray-50 rounded-2xl p-5 border border-gray-100">
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="font-bold text-sm text-gray-800">{f.l}</label>
-                        <input type="number" value={sla[f.k]||''} onChange={e => setSla(s => ({...s, [f.k]: e.target.value}))}
-                          className="w-24 text-right border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-orange-400 bg-white"/>
+                <div className="space-y-3">
+                  {followups.map((fu, i) => (
+                    <div key={i} className="bg-gray-50 border border-gray-100 rounded-2xl p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-gray-800">{ORDINALS[i] || `${i+1}º Follow-up`}</span>
+                        {followups.length > 1 && (
+                          <button onClick={() => removeFollowup(i)} className="p-1.5 hover:bg-red-50 rounded-lg text-red-400 transition-colors"><Trash2 size={13}/></button>
+                        )}
                       </div>
-                      <p className="text-xs text-gray-400">{f.desc}</p>
+                      <div className="flex gap-3">
+                        <div className="flex-1">
+                          <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Enviar após</label>
+                          <div className="flex gap-1.5">
+                            <input type="number" min="1" value={fu.time} onChange={e => updateFollowup(i,'time',e.target.value)}
+                              className="w-20 border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-gray-400 bg-white"/>
+                            <select value={fu.unit} onChange={e => updateFollowup(i,'unit',e.target.value)}
+                              className="flex-1 border border-gray-200 rounded-xl px-2 py-2 text-sm font-medium outline-none bg-white">
+                              <option value="h">Horas</option>
+                              <option value="d">Dias</option>
+                              <option value="min">Minutos</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Estilo da mensagem</label>
+                          <select value={fu.style||'leve'} onChange={e => updateFollowup(i,'style',e.target.value)}
+                            className="w-full border border-gray-200 rounded-xl px-2 py-2 text-sm font-medium outline-none bg-white">
+                            <option value="leve">Leve e amigável</option>
+                            <option value="valor">Proposta de valor</option>
+                            <option value="urgencia">Urgência</option>
+                            <option value="ultima">Última tentativa</option>
+                            <option value="personalizado">Personalizado</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Mensagem (opcional)</label>
+                        <textarea value={fu.message} onChange={e => updateFollowup(i,'message',e.target.value)}
+                          rows={2} placeholder="Deixe em branco para usar o estilo padrão do agente..."
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none text-sm resize-none bg-white focus:border-gray-400"/>
+                      </div>
                     </div>
                   ))}
                 </div>
-                <div className="flex justify-end mt-6">
-                  <button onClick={() => saveSla(sla)}
+                {followups.length < 7 && (
+                  <button onClick={addFollowup}
+                    className="mt-3 w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-gray-200 rounded-2xl text-sm font-bold text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-all">
+                    <Plus size={15}/> Adicionar Follow-up
+                  </button>
+                )}
+                <div className="flex justify-end mt-5">
+                  <button onClick={() => saveFollowups(followups)}
                     className="px-8 py-3.5 rounded-xl font-bold text-black hover:scale-105 transition-all flex items-center gap-2"
                     style={{ backgroundColor: primaryColor }}>
-                    <Save size={16}/> Salvar SLA
+                    <Save size={16}/> Salvar Follow-ups
                   </button>
                 </div>
               </div>
@@ -5733,14 +6072,15 @@
     const LeadDrawer = ({ lead, onClose, onDelete, primaryColor }) => {
       const [confirmDelete, setConfirmDelete] = useState(false);
       if (!lead) return null;
+      const pc = primaryColor || '#c6f432';
       const fmtDate = (iso) => { if(!iso) return '—'; try { return new Date(iso.replace(' ','T')+'Z').toLocaleDateString('pt-BR'); } catch { return '—'; } };
       const isLost = lead.stage === 'perdido' || lead.stage === 'lost';
-      return (
+      return createPortal(
         <>
-          <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]" onClick={onClose}/>
-          <div className="fixed right-0 top-0 h-full w-full max-w-md z-50 bg-white shadow-2xl border-l border-gray-200 overflow-y-auto flex flex-col animate-in slide-in-from-right duration-300">
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-[1px]" style={{zIndex:9998}} onClick={onClose}/>
+          <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl border-l border-gray-200 overflow-y-auto flex flex-col" style={{zIndex:9999}}>
             {/* Header */}
-            <div className="flex items-center justify-between p-5 border-b border-gray-100 shrink-0" style={{backgroundColor:primaryColor+'15'}}>
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 shrink-0" style={{backgroundColor:pc+'22'}}>
               <div>
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Lead</p>
                 <h2 className="text-xl font-black text-gray-900 leading-tight">{lead.name}</h2>
@@ -5828,7 +6168,8 @@
               )}
             </div>
           </div>
-        </>
+        </>,
+        document.body
       );
     };
 
@@ -7428,6 +7769,38 @@
       const saveTaskStages = (ns) => { setTaskStages(ns); localStorage.setItem('pixt_task_stages', JSON.stringify(ns)); };
       const [showStageConfig, setShowStageConfig] = useState(false);
 
+      /* ── Filtro de período ── */
+      const [taskDateFrom, setTaskDateFrom] = useState(null);
+      const [taskDateTo,   setTaskDateTo]   = useState(null);
+      const [showTaskCal,  setShowTaskCal]  = useState(false);
+      const [calPickMonth, setCalPickMonth] = useState(() => { const d = new Date(); d.setDate(1); return d; });
+      const [calPickA, setCalPickA] = useState(null);
+      const [calPickB, setCalPickB] = useState(null);
+      const fmtCalD = (d) => d ? d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '';
+      const calDaysT = (() => {
+        const yr = calPickMonth.getFullYear(), mo = calPickMonth.getMonth();
+        const first = new Date(yr, mo, 1);
+        const last  = new Date(yr, mo+1, 0);
+        const days = [];
+        for (let i=0; i<first.getDay(); i++) days.push(null);
+        for (let d=1; d<=last.getDate(); d++) days.push(new Date(yr, mo, d));
+        return days;
+      })();
+      const handleCalT = (day) => {
+        if (!day) return;
+        const d = new Date(day); d.setHours(0,0,0,0);
+        if (!calPickA || (calPickA && calPickB)) { setCalPickA(d); setCalPickB(null); }
+        else if (d < calPickA) { setCalPickB(calPickA); setCalPickA(d); }
+        else { setCalPickB(d); }
+      };
+      const applyCalT = () => {
+        if (!calPickA) return;
+        setTaskDateFrom(calPickA);
+        setTaskDateTo(calPickB || calPickA);
+        setShowTaskCal(false);
+      };
+      const clearCalT = () => { setTaskDateFrom(null); setTaskDateTo(null); setCalPickA(null); setCalPickB(null); setShowTaskCal(false); };
+
       const defForm = { title: '', description: '', client_name: '', squad_id: '', priority: 'media', current_stage: 'briefing', executor_name: '', estimated_minutes: 60, due_date: '', tag_ids: [] };
       const [form, setForm] = useState(defForm);
       const setFF = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -7458,10 +7831,18 @@
         if (filters.executor && t.executor_name !== filters.executor) return false;
         if (filters.stage    && t.current_stage !== filters.stage) return false;
         if (filters.priority && t.priority !== filters.priority) return false;
+        if (taskDateFrom && t.due_date) {
+          const d = new Date(t.due_date); d.setHours(0,0,0,0);
+          if (d < taskDateFrom) return false;
+        }
+        if (taskDateTo && t.due_date) {
+          const d = new Date(t.due_date); d.setHours(0,0,0,0);
+          if (d > taskDateTo) return false;
+        }
         return true;
       });
 
-      const hasFilters = Object.values(filters).some(Boolean);
+      const hasFilters = Object.values(filters).some(Boolean) || !!taskDateFrom;
 
       const createTask = async () => {
         if (!form.title.trim())   return toast('Título obrigatório', 'error');
@@ -7566,7 +7947,7 @@
 
           {/* Filtros — só quando Tarefas */}
           {subView === 'tarefas' && (
-            <div className="flex flex-wrap gap-2 flex-shrink-0 px-3 py-2 bg-white/70 border border-gray-200 rounded-2xl shadow-sm items-center">
+            <div className="flex flex-wrap gap-2 flex-shrink-0 px-3 py-2 bg-white/70 border border-gray-200 rounded-2xl shadow-sm items-center relative">
               <Filter size={13} className="text-gray-400 shrink-0" />
               <select value={filters.client} onChange={e => setFilters(f => ({ ...f, client: e.target.value }))}
                 className="text-xs font-medium border border-gray-200 rounded-xl px-3 py-1.5 bg-white outline-none text-gray-700">
@@ -7588,8 +7969,50 @@
                 <option value="">Todas Prioridades</option>
                 {TASK_PRIORITIES.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
               </select>
+              {/* Calendário de período */}
+              <div className="relative">
+                <button onClick={() => setShowTaskCal(v => !v)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${taskDateFrom ? 'border-gray-700 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}>
+                  <Calendar size={12}/>
+                  {taskDateFrom ? `${fmtCalD(taskDateFrom)} → ${fmtCalD(taskDateTo || taskDateFrom)}` : 'Período'}
+                </button>
+                {showTaskCal && (
+                  <div className="absolute top-full left-0 mt-1 z-30 bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 w-72" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-between mb-3">
+                      <button onClick={() => setCalPickMonth(m => new Date(m.getFullYear(), m.getMonth()-1, 1))} className="p-1 hover:bg-gray-100 rounded-lg text-gray-500"><ChevronDown size={14} style={{transform:'rotate(90deg)'}}/></button>
+                      <span className="text-xs font-bold text-gray-700 capitalize">
+                        {calPickMonth.toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}
+                      </span>
+                      <button onClick={() => setCalPickMonth(m => new Date(m.getFullYear(), m.getMonth()+1, 1))} className="p-1 hover:bg-gray-100 rounded-lg text-gray-500"><ChevronDown size={14} style={{transform:'rotate(-90deg)'}}/></button>
+                    </div>
+                    <div className="grid grid-cols-7 gap-0.5 mb-1">
+                      {['D','S','T','Q','Q','S','S'].map((d,i)=><span key={i} className="text-center text-[9px] font-bold text-gray-400 py-0.5">{d}</span>)}
+                    </div>
+                    <div className="grid grid-cols-7 gap-0.5">
+                      {calDaysT.map((day, i) => {
+                        if (!day) return <span key={i}/>;
+                        const t = day.getTime();
+                        const isA = calPickA && calPickA.getTime() === t;
+                        const isB = calPickB && calPickB.getTime() === t;
+                        const inRange = calPickA && calPickB && t > calPickA.getTime() && t < calPickB.getTime();
+                        return (
+                          <button key={i} onClick={() => handleCalT(day)}
+                            className={`text-xs py-1 rounded-lg font-medium transition-all ${isA||isB ? 'text-black font-bold' : inRange ? 'bg-gray-100 text-gray-700' : 'hover:bg-gray-50 text-gray-600'}`}
+                            style={(isA||isB) ? {backgroundColor:'#c6f432'} : {}}>
+                            {day.getDate()}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+                      <button onClick={clearCalT} className="flex-1 text-xs py-2 rounded-xl border border-gray-200 font-bold text-gray-500 hover:bg-gray-50">Limpar</button>
+                      <button onClick={applyCalT} className="flex-1 text-xs py-2 rounded-xl font-bold text-black" style={{backgroundColor:'#c6f432'}}>Aplicar</button>
+                    </div>
+                  </div>
+                )}
+              </div>
               {hasFilters && (
-                <button onClick={() => setFilters({ client: '', executor: '', stage: '', priority: '' })}
+                <button onClick={() => { setFilters({ client: '', executor: '', stage: '', priority: '' }); clearCalT(); }}
                   className="text-[11px] font-bold text-red-500 hover:text-red-700 px-2 py-1 rounded-lg hover:bg-red-50 transition-all">✕ Limpar</button>
               )}
               <span className="ml-auto text-[11px] font-bold text-gray-400">{filtered.length} tarefa{filtered.length !== 1 ? 's' : ''}</span>
@@ -8091,15 +8514,297 @@
       );
     };
 
-    const AgentStrategyTab = ({ agent, primaryColor }) => (
-      <AgentTabShell primaryColor={primaryColor} title="Estratégia" subtitle="Posicionamento estratégico e expansão do agente"
-        sections={[
-          { key:'posicionamento', label:'Posicionamento', hint:'Como este agente se diferencia no mercado do cliente?', placeholder:'Ex: Agente especializado em atendimento consultivo para o setor jurídico...' },
-          { key:'metricas', label:'Métricas de Expansão', hint:'Indicadores que justificam a expansão do uso do agente', placeholder:'Ex: Volume de conversas, leads qualificados, redução de custo operacional...' },
-          { key:'expansao', label:'Plano de Expansão', hint:'Próximos passos para ampliar o valor gerado pelo agente', placeholder:'Ex: Integrar com CRM, ativar novo canal WhatsApp Business, treinar em novos produtos...' },
-          { key:'riscos', label:'Riscos e Mitigações', hint:'Riscos identificados e como gerenciá-los', placeholder:'Ex: Risco de alucinação → revisão semanal de logs, escalação automática para humano...' },
-        ]}/>
-    );
+    /* =========================================================
+       MIRO-STYLE MIND MAP — AgentStrategyTab
+       ========================================================= */
+    const AgentStrategyTab = ({ agent, primaryColor }) => {
+      const pc = primaryColor || '#c6f432';
+      const storageKey = `pixt_mindmap_${agent}`;
+
+      const makeNode = (id, x, y, text, color, parentId) => ({ id, x, y, text, color: color || pc, parentId: parentId || null, width: 160, height: 48 });
+
+      const initNodes = () => {
+        const cx = 500, cy = 300;
+        return [
+          makeNode('root', cx, cy, agent || 'Estratégia', pc, null),
+          makeNode('n1', cx - 250, cy - 150, 'Posicionamento', '#6366f1', 'root'),
+          makeNode('n2', cx + 200, cy - 150, 'Métricas', '#22c55e', 'root'),
+          makeNode('n3', cx - 250, cy + 150, 'Expansão', '#f59e0b', 'root'),
+          makeNode('n4', cx + 200, cy + 150, 'Riscos', '#ef4444', 'root'),
+        ];
+      };
+
+      const [nodes, setNodes] = useState(() => {
+        try { const s = localStorage.getItem(storageKey); return s ? JSON.parse(s) : initNodes(); } catch { return initNodes(); }
+      });
+      const [edges] = useState([]); // edges computed from parentId
+      const [pan, setPan] = useState({ x: 0, y: 0 });
+      const [zoom, setZoom] = useState(1);
+      const [draggingNode, setDraggingNode] = useState(null);
+      const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+      const [isPanning, setIsPanning] = useState(false);
+      const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+      const [editingNode, setEditingNode] = useState(null);
+      const [editText, setEditText] = useState('');
+      const [selectedNode, setSelectedNode] = useState(null);
+      const [colorPickNode, setColorPickNode] = useState(null);
+      const svgRef = useRef(null);
+      const toast = useToast();
+
+      const save = (n) => { try { localStorage.setItem(storageKey, JSON.stringify(n)); } catch {} };
+
+      const NODE_COLORS = ['#c6f432','#6366f1','#22c55e','#f59e0b','#ef4444','#3b82f6','#ec4899','#14b8a6','#8b5cf6','#f97316'];
+
+      const getEdges = (ns) => ns.filter(n => n.parentId).map(n => {
+        const parent = ns.find(p => p.id === n.parentId);
+        if (!parent) return null;
+        return { id: `${n.parentId}-${n.id}`, x1: parent.x, y1: parent.y, x2: n.x, y2: n.y, color: n.color };
+      }).filter(Boolean);
+
+      const svgCoords = (e) => {
+        const rect = svgRef.current?.getBoundingClientRect();
+        if (!rect) return { x: 0, y: 0 };
+        return { x: (e.clientX - rect.left - pan.x) / zoom, y: (e.clientY - rect.top - pan.y) / zoom };
+      };
+
+      const onNodeMouseDown = (e, node) => {
+        e.stopPropagation();
+        if (e.button !== 0) return;
+        const c = svgCoords(e);
+        setDraggingNode(node.id);
+        setDragOffset({ x: c.x - node.x, y: c.y - node.y });
+        setSelectedNode(node.id);
+        setColorPickNode(null);
+      };
+
+      const onSvgMouseDown = (e) => {
+        if (e.button === 0 && !draggingNode) {
+          setIsPanning(true);
+          setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+          setSelectedNode(null);
+          setColorPickNode(null);
+        }
+      };
+
+      const onMouseMove = (e) => {
+        if (draggingNode) {
+          const c = svgCoords(e);
+          setNodes(ns => {
+            const next = ns.map(n => n.id === draggingNode ? { ...n, x: c.x - dragOffset.x, y: c.y - dragOffset.y } : n);
+            return next;
+          });
+        } else if (isPanning) {
+          setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
+        }
+      };
+
+      const onMouseUp = () => {
+        if (draggingNode) { setNodes(ns => { save(ns); return ns; }); }
+        setDraggingNode(null);
+        setIsPanning(false);
+      };
+
+      const onWheel = (e) => {
+        e.preventDefault();
+        const delta = e.deltaY < 0 ? 1.1 : 0.9;
+        setZoom(z => Math.min(3, Math.max(0.2, z * delta)));
+      };
+
+      const addChild = (parentId) => {
+        const parent = nodes.find(n => n.id === parentId);
+        if (!parent) return;
+        const angle = Math.random() * Math.PI * 2;
+        const r = 220;
+        const id = 'n' + Date.now();
+        const colors = NODE_COLORS.filter(c => c !== parent.color);
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        const next = [...nodes, makeNode(id, parent.x + Math.cos(angle) * r, parent.y + Math.sin(angle) * r, 'Novo nó', color, parentId)];
+        setNodes(next); save(next); setSelectedNode(id); setEditingNode(id); setEditText('Novo nó');
+      };
+
+      const deleteNode = (id) => {
+        if (id === 'root') { toast('Não é possível remover o nó raiz', 'error'); return; }
+        const toRemove = new Set([id]);
+        let changed = true;
+        while (changed) {
+          changed = false;
+          nodes.forEach(n => { if (n.parentId && toRemove.has(n.parentId) && !toRemove.has(n.id)) { toRemove.add(n.id); changed = true; } });
+        }
+        const next = nodes.filter(n => !toRemove.has(n.id));
+        setNodes(next); save(next); setSelectedNode(null);
+      };
+
+      const startEdit = (node) => { setEditingNode(node.id); setEditText(node.text); setColorPickNode(null); };
+
+      const commitEdit = () => {
+        if (!editingNode) return;
+        const next = nodes.map(n => n.id === editingNode ? { ...n, text: editText || n.text } : n);
+        setNodes(next); save(next); setEditingNode(null);
+      };
+
+      const changeColor = (id, color) => {
+        const next = nodes.map(n => n.id === id ? { ...n, color } : n);
+        setNodes(next); save(next); setColorPickNode(null);
+      };
+
+      const resetMap = () => { const n = initNodes(); setNodes(n); save(n); setSelectedNode(null); setPan({x:0,y:0}); setZoom(1); };
+
+      const computedEdges = getEdges(nodes);
+
+      return (
+        <div className="animate-in fade-in duration-300 flex flex-col" style={{height:'calc(100vh - 220px)'}}>
+          {/* Toolbar */}
+          <div className="flex items-center justify-between mb-3 shrink-0">
+            <div>
+              <h2 className="text-xl font-black text-gray-900">Mapa Mental — Estratégia</h2>
+              <p className="text-sm text-gray-400">Dê duplo clique num nó para editar. Clique num nó selecionado para adicionar filho.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setZoom(z => Math.min(3, z * 1.2))} className="w-8 h-8 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-600 transition" title="Zoom in"><ZoomIn size={15}/></button>
+              <button onClick={() => setZoom(z => Math.max(0.2, z * 0.8))} className="w-8 h-8 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-600 transition" title="Zoom out"><ZoomOut size={15}/></button>
+              <button onClick={() => { setPan({x:0,y:0}); setZoom(1); }} className="w-8 h-8 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-600 transition" title="Resetar visão"><Maximize2 size={15}/></button>
+              <span className="text-xs text-gray-400 font-bold w-12 text-center">{Math.round(zoom*100)}%</span>
+              <button onClick={resetMap} className="px-3 py-1.5 rounded-xl border border-red-100 bg-red-50 text-red-500 text-xs font-bold hover:bg-red-100 transition">Reset mapa</button>
+              <button onClick={() => { save(nodes); toast('Mapa salvo!','success'); }} className="px-4 py-2 rounded-xl font-bold text-black text-sm flex items-center gap-1.5 hover:opacity-90 transition" style={{backgroundColor:pc}}>
+                <Save size={14}/> Salvar
+              </button>
+            </div>
+          </div>
+
+          {/* Canvas */}
+          <div className="flex-1 relative rounded-2xl border border-gray-200 bg-[#f8f9fb] overflow-hidden shadow-inner"
+            style={{cursor: isPanning ? 'grabbing' : 'grab'}}
+            ref={svgRef}
+            onMouseDown={onSvgMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseUp}
+            onWheel={onWheel}>
+
+            {/* Dot grid background */}
+            <svg width="100%" height="100%" className="absolute inset-0 pointer-events-none" style={{zIndex:0}}>
+              <defs>
+                <pattern id="mindDots" x="0" y="0" width="28" height="28" patternUnits="userSpaceOnUse">
+                  <circle cx="1" cy="1" r="1" fill="#d1d5db"/>
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill="url(#mindDots)"/>
+            </svg>
+
+            {/* Main SVG layer for edges */}
+            <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%" style={{zIndex:1}}>
+              <g transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}>
+                {computedEdges.map(e => (
+                  <line key={e.id}
+                    x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2}
+                    stroke={e.color} strokeWidth={2/zoom} strokeOpacity={0.5}
+                    strokeDasharray={`${6/zoom},${3/zoom}`}/>
+                ))}
+              </g>
+            </svg>
+
+            {/* Nodes layer */}
+            <div className="absolute inset-0" style={{zIndex:2}}>
+              {nodes.map(node => {
+                const nx = node.x * zoom + pan.x;
+                const ny = node.y * zoom + pan.y;
+                const w = node.width * zoom;
+                const h = node.height * zoom;
+                const isRoot = node.id === 'root';
+                const isSel = selectedNode === node.id;
+                const isEdit = editingNode === node.id;
+                const fontSize = Math.max(10, 13 * zoom);
+                return (
+                  <div key={node.id}
+                    style={{
+                      position: 'absolute',
+                      left: nx - w/2,
+                      top: ny - h/2,
+                      width: w,
+                      height: h,
+                      userSelect: 'none',
+                      zIndex: isSel ? 10 : 3,
+                    }}>
+                    <div
+                      onMouseDown={(e) => onNodeMouseDown(e, node)}
+                      onDoubleClick={() => startEdit(node)}
+                      className="w-full h-full rounded-xl flex items-center justify-center shadow-md transition-all relative"
+                      style={{
+                        backgroundColor: node.color,
+                        border: isSel ? `${2/zoom}px solid #1f2937` : `${1.5/zoom}px solid rgba(0,0,0,0.15)`,
+                        cursor: draggingNode === node.id ? 'grabbing' : 'grab',
+                        transform: isSel ? 'scale(1.05)' : 'scale(1)',
+                      }}>
+                      {isEdit ? (
+                        <input
+                          autoFocus
+                          value={editText}
+                          onChange={e => setEditText(e.target.value)}
+                          onBlur={commitEdit}
+                          onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditingNode(null); }}
+                          onClick={e => e.stopPropagation()}
+                          className="w-full text-center font-bold outline-none bg-transparent px-2"
+                          style={{fontSize, color: isRoot || node.color === pc ? '#111' : '#fff'}}
+                        />
+                      ) : (
+                        <span className="font-bold px-2 text-center leading-tight overflow-hidden"
+                          style={{fontSize, color: isRoot || node.color === pc ? '#111' : '#fff', maxWidth: '100%', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden'}}>
+                          {node.text}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Node actions when selected */}
+                    {isSel && !isEdit && (
+                      <div className="absolute flex gap-1" style={{top: -28*zoom, left: '50%', transform:'translateX(-50%)', zIndex:20}}>
+                        <button onClick={e => {e.stopPropagation(); addChild(node.id);}}
+                          className="rounded-full bg-white border border-gray-300 shadow text-gray-700 hover:bg-gray-50 flex items-center justify-center transition"
+                          style={{width:22*zoom, height:22*zoom, fontSize:12*zoom}} title="Adicionar filho">
+                          <Plus size={12*zoom}/>
+                        </button>
+                        <button onClick={e => {e.stopPropagation(); startEdit(node);}}
+                          className="rounded-full bg-white border border-gray-300 shadow text-blue-600 hover:bg-blue-50 flex items-center justify-center transition"
+                          style={{width:22*zoom, height:22*zoom}} title="Editar texto">
+                          <Edit3 size={11*zoom}/>
+                        </button>
+                        <button onClick={e => {e.stopPropagation(); setColorPickNode(node.id); }}
+                          className="rounded-full shadow border border-gray-300 flex items-center justify-center transition hover:scale-110"
+                          style={{width:22*zoom, height:22*zoom, backgroundColor:node.color}} title="Cor"/>
+                        {!isRoot && (
+                          <button onClick={e => {e.stopPropagation(); deleteNode(node.id);}}
+                            className="rounded-full bg-white border border-red-200 shadow text-red-500 hover:bg-red-50 flex items-center justify-center transition"
+                            style={{width:22*zoom, height:22*zoom}} title="Excluir">
+                            <Trash2 size={11*zoom}/>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Color picker */}
+                    {colorPickNode === node.id && (
+                      <div className="absolute bg-white rounded-2xl shadow-2xl border border-gray-200 p-3 flex flex-wrap gap-1.5"
+                        style={{top:'100%', left:'50%', transform:'translateX(-50%)', marginTop:8, zIndex:30, width:160}}
+                        onClick={e => e.stopPropagation()}>
+                        {NODE_COLORS.map(c => (
+                          <button key={c} onClick={() => changeColor(node.id, c)}
+                            className="w-6 h-6 rounded-full border-2 hover:scale-110 transition-all"
+                            style={{backgroundColor:c, borderColor: node.color===c?'#111':'transparent'}}/>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Help overlay */}
+            <div className="absolute bottom-3 left-3 text-[10px] text-gray-400 font-medium pointer-events-none" style={{zIndex:5}}>
+              Scroll = zoom · Arraste fundo = pan · Duplo clique = editar · Clique nó = ações
+            </div>
+          </div>
+        </div>
+      );
+    };
 
     const root = createRoot(document.getElementById('root'));
     root.render(<ToastProvider><App /></ToastProvider>);

@@ -1,0 +1,9 @@
+# Não publicar no deploy
+backend/_e2e_test.js
+backend/_mock_test.js
+backend/.env
+backend/.env.local
+iniciar.bat
+README.md
+supabase_schema.sql
+index (15) (2).html
