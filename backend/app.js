@@ -36,6 +36,7 @@ app.use('/api/knowledge', require('./routes/knowledge'));
 app.use('/api/contracts', require('./routes/contracts'));
 app.use('/api/timetracking', require('./routes/timetracking'));
 app.use('/api/goals', require('./routes/goals'));
+app.use('/api/bootstrap', require('./routes/bootstrap'));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
