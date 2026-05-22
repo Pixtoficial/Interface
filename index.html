@@ -1917,7 +1917,7 @@
       const rangeKey = `${dateRange.startDate.toISOString().slice(0,10)}_${dateRange.endDate.toISOString().slice(0,10)}`;
 
       // ── Mock data base (matching standalone HTML) ─────────────
-      const USER_B = { totalSpend:73730, leads:2230, clicks:85000, impressions:2800000, pageViews:320000, metaSpend:45230, googleSpend:28500, totalRevenue:298266 };
+      const USER_B = { totalSpend:68420, leads:1847, clicks:72300, impressions:3420000, pageViews:294000, metaSpend:42600, googleSpend:25820, totalRevenue:321800 };
       const seededRnd = (seed) => { let s=seed; return ()=>{ s=(s*9301+49297)%233280; return s/233280; }; };
       const eachDay = (start, end) => { const out=[]; let cur=new Date(start); cur.setHours(0,0,0,0); const fin=new Date(end); fin.setHours(23,59,59,999); while(cur<=fin){ out.push(new Date(cur)); cur=new Date(cur); cur.setDate(cur.getDate()+1); } return out; };
       const fmtDt = (d) => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
@@ -6357,17 +6357,17 @@
 
       const sections = [
         { key:'receita', icon:DollarSign, label:'Receita & Crescimento', color:'#22c55e',
-          metrics:[{l:'MRR',v:'R$ 47.800',sub:'Receita recorrente mensal'},{l:'ARR',v:'R$ 573.600',sub:'MRR × 12'},{l:'NRR',v:'108%',sub:'Net Revenue Retention'},{l:'LTV',v:'R$ 8.940',sub:'Lifetime value médio'},{l:'CAC',v:'R$ 1.240',sub:'Custo aquisição cliente'},{l:'LTV:CAC',v:'7,2×',sub:'Saudável acima de 3×'}],
-          chartBase:47800, chartKey:'mrr' },
+          metrics:[{l:'MRR',v:'R$ 103.500',sub:'Receita recorrente mensal'},{l:'ARR',v:'R$ 1.242.000',sub:'MRR × 12'},{l:'NRR',v:'104%',sub:'Net Revenue Retention'},{l:'LTV',v:'R$ 181.440',sub:'Ticket médio × 14 meses'},{l:'CAC',v:'R$ 3.800',sub:'Custo aquisição cliente'},{l:'LTV:CAC',v:'47,7×',sub:'Saudável acima de 3×'}],
+          chartBase:103500, chartKey:'mrr' },
         { key:'pipeline', icon:KanbanSquare, label:'Pipeline & Vendas', color:'#3b82f6',
-          metrics:[{l:'Win Rate',v:'31%',sub:'Oportunidades convertidas'},{l:'Ticket Médio',v:'R$ 2.190',sub:'Por contrato fechado'},{l:'Leads Ativos',v:'284',sub:'No pipeline atual'},{l:'Leads Fechados',v:'88',sub:'Convertidos este mês'},{l:'Contratos',v:'42',sub:'Contratos ativos'},{l:'Em Stall',v:'7',sub:'Sem atividade +14d'}],
-          chartBase:2190, chartKey:'pipeline' },
+          metrics:[{l:'Win Rate',v:'28%',sub:'Oportunidades convertidas'},{l:'Ticket Médio',v:'R$ 12.937',sub:'Por contrato fechado'},{l:'Leads Ativos',v:'35',sub:'No pipeline atual'},{l:'Leads Fechados',v:'8',sub:'Convertidos este mês'},{l:'Contratos',v:'8',sub:'Contratos ativos'},{l:'Em Stall',v:'3',sub:'Sem atividade +14d'}],
+          chartBase:12937, chartKey:'pipeline' },
         { key:'agentes', icon:Bot, label:'Performance Agentes IA', color:'#a855f7',
-          metrics:[{l:'Conversas',v:'3.847',sub:'Total no período'},{l:'Resolução',v:'84%',sub:'Taxa de resolução IA'},{l:'CSAT Médio',v:'4,7/5',sub:'Satisfação do cliente'},{l:'Escalações',v:'12%',sub:'Para humano'},{l:'Uptime',v:'99,7%',sub:'Disponibilidade média'},{l:'ROI Médio',v:'8,4×',sub:'Retorno sobre custo'}],
-          chartBase:3847, chartKey:'agentes' },
+          metrics:[{l:'Conversas',v:'1.248',sub:'Total no período'},{l:'Resolução',v:'82%',sub:'Taxa de resolução IA'},{l:'CSAT Médio',v:'4,6/5',sub:'Satisfação do cliente'},{l:'Escalações',v:'18%',sub:'Para humano'},{l:'Uptime',v:'99,8%',sub:'Disponibilidade média'},{l:'ROI Médio',v:'27,2×',sub:'Retorno sobre custo IA'}],
+          chartBase:1248, chartKey:'agentes' },
         { key:'financeiro', icon:Receipt, label:'Indicadores Financeiros', color:'#f97316',
-          metrics:[{l:'Receita Faturada',v:'R$ 52.400',sub:'Faturas pagas no período'},{l:'Inadimplência',v:'3,2%',sub:'Faturas em atraso'},{l:'Churn Rate',v:'2,1%',sub:'Cancelamentos/mês'},{l:'MRR Expansão',v:'R$ 4.200',sub:'Upsell e upgrades'},{l:'CAC Payback',v:'4,2 meses',sub:'Tempo retorno CAC'},{l:'Margem Bruta',v:'68%',sub:'Receita − CMV'}],
-          chartBase:52400, chartKey:'financeiro' },
+          metrics:[{l:'Receita Faturada',v:'R$ 641.500',sub:'Faturas pagas (6 meses)'},{l:'Inadimplência',v:'2,8%',sub:'Faturas em atraso'},{l:'Churn Rate',v:'8,3%',sub:'2 cancelamentos histórico'},{l:'MRR Expansão',v:'R$ 8.500',sub:'Upsell e upgrades'},{l:'CAC Payback',v:'3,5 meses',sub:'Tempo retorno CAC'},{l:'Margem Bruta',v:'64%',sub:'Receita − CMV'}],
+          chartBase:103500, chartKey:'financeiro' },
       ];
 
       return (
@@ -6400,11 +6400,11 @@
                 <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-2 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"/>MRR — Receita Recorrente Mensal
                 </p>
-                <h2 className="text-5xl font-black" style={{color:primaryColor}}>R$ 47.800</h2>
-                <p className="text-green-400 text-sm font-medium mt-2 flex items-center gap-1"><TrendingUp size={14}/> +12,4% vs. período anterior</p>
+                <h2 className="text-5xl font-black" style={{color:primaryColor}}>R$ 103.500</h2>
+                <p className="text-green-400 text-sm font-medium mt-2 flex items-center gap-1"><TrendingUp size={14}/> +18,2% vs. período anterior</p>
               </div>
               <div className="grid grid-cols-2 gap-4 bg-black/40 p-5 rounded-2xl border border-white/5">
-                {[{l:'ARR',v:'R$ 573.600'},{l:'NRR',v:'108%'},{l:'Churn',v:'2,1%',red:true},{l:'LTV',v:'R$ 8.940'}].map(k=>(
+                {[{l:'ARR',v:'R$ 1.242.000'},{l:'NRR',v:'104%'},{l:'Churn',v:'8,3%',red:true},{l:'LTV',v:'R$ 181.440'}].map(k=>(
                   <div key={k.l}><p className="text-gray-500 text-xs font-bold uppercase mb-1">{k.l}</p><p className={`text-lg font-bold ${k.red?'text-red-400':'text-white'}`}>{k.v}</p></div>
                 ))}
               </div>
@@ -8132,7 +8132,7 @@
 
       const [planRB, setPlanRB] = useState(() => {
         const init = {};
-        dreMonths.forEach(m => { init[m.key] = 100000; });
+        dreMonths.forEach((m, i) => { init[m.key] = [95000, 99500, 103500][i] ?? 103500; });
         return init;
       });
 
@@ -8184,7 +8184,7 @@
       };
 
       const [est, setEst] = useState({
-        receitaBruta: 100000,
+        receitaBruta: 103500,
         impostos: 9.25,
         cmv: 18,
         marketing: 8,
