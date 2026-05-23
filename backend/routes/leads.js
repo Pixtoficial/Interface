@@ -23,7 +23,7 @@ router.get('/', authRequired, async (req, res) => {
 });
 
 router.post('/', authRequired, async (req, res) => {
-  const { agent_slug, name, company, score, amount, tag, color_type, stage } = req.body || {};
+  const { agent_slug, name, company, score, amount, tag, color_type, stage, phone, email } = req.body || {};
   if (!agent_slug || !name) return res.status(400).json({ error: 'agent_slug e name são obrigatórios' });
 
   const st = (stage && typeof stage === 'string') ? stage : 'new';
@@ -53,6 +53,8 @@ router.post('/', authRequired, async (req, res) => {
       color_type: color_type || 'default',
       stage: st,
       position,
+      phone: phone || null,
+      email: email || null,
     })
     .select()
     .single();
@@ -72,7 +74,7 @@ router.patch('/:id', authRequired, async (req, res) => {
     .single();
   if (!existing) return res.status(404).json({ error: 'Lead não encontrado' });
 
-  const allowed = ['name', 'company', 'score', 'amount', 'tag', 'color_type', 'stage', 'position'];
+  const allowed = ['name', 'company', 'score', 'amount', 'tag', 'color_type', 'stage', 'position', 'phone', 'email', 'notes', 'conversation_summary'];
   const updates = {};
   for (const k of allowed) {
     if (req.body && Object.prototype.hasOwnProperty.call(req.body, k)) {

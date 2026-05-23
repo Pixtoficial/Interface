@@ -21,14 +21,21 @@ router.post('/login', async (req, res) => {
   if (!u.is_active) return res.status(403).json({ error: 'Conta desativada. Contacte o administrador.' });
   if (!bcrypt.compareSync(password, u.password_hash)) return res.status(401).json({ error: 'Credenciais inválidas' });
 
-  const token = sign({ uid: u.id, email: u.email, role: u.role || 'client' });
-  res.json({ user: { id: u.id, email: u.email, name: u.name, role: u.role || 'client' }, token });
+  const role = u.role || 'client';
+  const tokenPayload = { uid: u.id, email: u.email, role };
+  if (u.owner_id) tokenPayload.owner_id = u.owner_id;
+
+  const token = sign(tokenPayload);
+  res.json({
+    user: { id: u.id, email: u.email, name: u.name, role, owner_id: u.owner_id || null },
+    token,
+  });
 });
 
 router.get('/me', authRequired, async (req, res) => {
   const { data: rows } = await supabase
     .from('users')
-    .select('id, email, name, role, created_at')
+    .select('id, email, name, role, owner_id, created_at')
     .eq('id', req.user.uid)
     .limit(1);
 

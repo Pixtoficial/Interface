@@ -5,9 +5,14 @@ const router = express.Router();
 
 const STAGES = ['briefing', 'redacao', 'design', 'revisao', 'aprovacao', 'concluido'];
 
+function scopeId(req) {
+  // executores usam os dados do dono (owner_id)
+  return req.user.owner_id || req.user.uid;
+}
+
 router.get('/', authRequired, async (req, res) => {
   const { stage, squad_id, client_name, executor_name, priority } = req.query;
-  let q = supabase.from('tasks').select('*').eq('user_id', req.user.uid).order('due_date', { nullsFirst: false }).order('id');
+  let q = supabase.from('tasks').select('*').eq('user_id', scopeId(req)).order('due_date', { nullsFirst: false }).order('id');
   if (stage)         q = q.eq('current_stage', stage);
   if (squad_id)      q = q.eq('squad_id', parseInt(squad_id));
   if (client_name)   q = q.ilike('client_name', `%${client_name}%`);
@@ -33,7 +38,7 @@ router.post('/', authRequired, async (req, res) => {
   const historyEntry = { stage, executor_name: executor_name || null, started_at: new Date().toISOString() };
 
   const { data, error } = await supabase.from('tasks').insert({
-    user_id: req.user.uid, title,
+    user_id: scopeId(req), title,
     description: description || null,
     client_name: client_name || null,
     squad_id: squad_id || null,
@@ -60,7 +65,7 @@ router.post('/', authRequired, async (req, res) => {
 
 router.patch('/:id', authRequired, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { data: existing } = await supabase.from('tasks').select('id').eq('id', id).eq('user_id', req.user.uid).single();
+  const { data: existing } = await supabase.from('tasks').select('id').eq('id', id).eq('user_id', scopeId(req)).single();
   if (!existing) return res.status(404).json({ error: 'Task não encontrada' });
 
   const allowed = [
@@ -73,7 +78,7 @@ router.patch('/:id', authRequired, async (req, res) => {
   for (const k of allowed) if (req.body && k in req.body) updates[k] = req.body[k];
   updates.updated_at = new Date().toISOString();
 
-  const { data, error } = await supabase.from('tasks').update(updates).eq('id', id).eq('user_id', req.user.uid).select().single();
+  const { data, error } = await supabase.from('tasks').update(updates).eq('id', id).eq('user_id', scopeId(req)).select().single();
   if (error) return res.status(500).json({ error: error.message });
   res.json({ task: data });
 });
@@ -108,7 +113,7 @@ router.post('/:id/advance', authRequired, async (req, res) => {
     executor_name: next_executor_name || null,
     stage_history: history,
     updated_at: now,
-  }).eq('id', id).eq('user_id', req.user.uid).select().single();
+  }).eq('id', id).eq('user_id', scopeId(req)).select().single();
 
   if (error) return res.status(500).json({ error: error.message });
   res.json({ task: data });
@@ -116,9 +121,51 @@ router.post('/:id/advance', authRequired, async (req, res) => {
 
 router.delete('/:id', authRequired, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { error, count } = await supabase.from('tasks').delete({ count: 'exact' }).eq('id', id).eq('user_id', req.user.uid);
+  const { error, count } = await supabase.from('tasks').delete({ count: 'exact' }).eq('id', id).eq('user_id', scopeId(req));
   if (error) return res.status(500).json({ error: error.message });
   if (count === 0) return res.status(404).json({ error: 'Task não encontrada' });
+  res.json({ ok: true });
+});
+
+/* ── Comentários de tarefa ── */
+router.get('/:id/comments', authRequired, async (req, res) => {
+  const taskId = parseInt(req.params.id, 10);
+  const { data, error } = await supabase
+    .from('task_comments')
+    .select('id, user_id, author_name, author_type, text, created_at')
+    .eq('task_id', taskId)
+    .order('created_at');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ comments: data || [] });
+});
+
+router.post('/:id/comments', authRequired, async (req, res) => {
+  const taskId = parseInt(req.params.id, 10);
+  const { text } = req.body || {};
+  if (!text || !text.trim()) return res.status(400).json({ error: 'Texto é obrigatório' });
+
+  const isExecutor = req.user.email && req.user.email.endsWith('@executor.ia');
+  const { data: userRow } = await supabase.from('users').select('name, email').eq('id', req.user.uid).single();
+  const authorName = userRow?.name || (req.user.email || '').split('@')[0];
+
+  const { data, error } = await supabase.from('task_comments').insert({
+    task_id: taskId,
+    user_id: req.user.uid,
+    author_name: authorName,
+    author_type: isExecutor ? 'executor' : 'owner',
+    text: text.trim(),
+  }).select().single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json({ comment: data });
+});
+
+router.delete('/:taskId/comments/:commentId', authRequired, async (req, res) => {
+  const commentId = parseInt(req.params.commentId, 10);
+  const { error } = await supabase.from('task_comments').delete()
+    .eq('id', commentId)
+    .eq('user_id', req.user.uid);
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });
 
