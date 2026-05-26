@@ -163,28 +163,68 @@
       indigo:'#6366f1', teal:'#14b8a6', pink:'#ec4899',
     };
 
-    function usePipelineStages(agentSlug) {
-      const [stages, setStages] = useState(DEFAULT_STAGES);
+    function usePipelines(agentSlug) {
+      const [pipelines, setPipelines] = useState([{ ...DEFAULT_PIPELINE }]);
+      const [activePipelineId, setActivePipelineId] = useState('default');
+      const KEY = 'pipelines_v2';
 
       useEffect(() => {
         api(`/settings/${agentSlug}`).then(d => {
-          if (d.settings?.pipeline_stages) {
+          if (d.settings?.[KEY]) {
+            try {
+              const parsed = JSON.parse(d.settings[KEY]);
+              if (Array.isArray(parsed) && parsed.length > 0) { setPipelines(parsed); setActivePipelineId(parsed[0].id); }
+            } catch {}
+          } else if (d.settings?.pipeline_stages) {
             try {
               const parsed = JSON.parse(d.settings.pipeline_stages);
-              if (Array.isArray(parsed) && parsed.length > 0) setStages(parsed);
+              if (Array.isArray(parsed) && parsed.length > 0)
+                setPipelines([{ id: 'default', name: 'Pipeline Principal', stages: parsed }]);
             } catch {}
           }
         }).catch(() => {});
       }, [agentSlug]);
 
-      const saveStages = useCallback(async (newStages) => {
+      const savePipelines = useCallback(async (next) => {
         await api(`/settings/${agentSlug}`, {
           method: 'PUT',
-          body: JSON.stringify({ settings: { pipeline_stages: JSON.stringify(newStages) } }),
+          body: JSON.stringify({ settings: { [KEY]: JSON.stringify(next) } }),
         });
-        setStages(newStages);
+        setPipelines(next);
       }, [agentSlug]);
 
+      const createPipeline = useCallback(async (name, currentPipelines) => {
+        const np = { id: `p_${Date.now()}`, name: name.trim(), stages: [...DEFAULT_STAGES] };
+        const next = [...currentPipelines, np];
+        await savePipelines(next);
+        setActivePipelineId(np.id);
+        return np;
+      }, [savePipelines]);
+
+      const deletePipeline = useCallback(async (id, currentPipelines, currentActiveId) => {
+        if (currentPipelines.length <= 1) return false;
+        const next = currentPipelines.filter(p => p.id !== id);
+        await savePipelines(next);
+        if (currentActiveId === id) setActivePipelineId(next[0].id);
+        return true;
+      }, [savePipelines]);
+
+      return { pipelines, activePipelineId, setActivePipelineId, savePipelines, createPipeline, deletePipeline };
+    }
+
+    function usePipelineStages(agentSlug) {
+      const [stages, setStages] = useState(DEFAULT_STAGES);
+      useEffect(() => {
+        api(`/settings/${agentSlug}`).then(d => {
+          if (d.settings?.pipeline_stages) {
+            try { const p = JSON.parse(d.settings.pipeline_stages); if (Array.isArray(p) && p.length) setStages(p); } catch {}
+          }
+        }).catch(() => {});
+      }, [agentSlug]);
+      const saveStages = useCallback(async (ns) => {
+        await api(`/settings/${agentSlug}`, { method: 'PUT', body: JSON.stringify({ settings: { pipeline_stages: JSON.stringify(ns) } }) });
+        setStages(ns);
+      }, [agentSlug]);
       return { stages, saveStages };
     }
 
@@ -1275,8 +1315,25 @@
               onDragStart={() => setDragging(idx)}
               onDragOver={e => { e.preventDefault(); setDragOver(idx); }}
               onDragEnd={drop}
-              className={`cursor-grab active:cursor-grabbing transition-opacity ${dragging === idx ? 'opacity-40' : ''} ${dragOver === idx && dragging !== idx ? 'ring-2 ring-blue-400 ring-offset-1 rounded-2xl' : ''}`}>
-              {renderItem(item, idx)}
+              style={{
+                transition: 'transform 0.15s, opacity 0.15s, box-shadow 0.15s',
+                transform: dragOver === idx && dragging !== idx ? 'scale(1.03)' : dragging === idx ? 'scale(0.96)' : 'scale(1)',
+                opacity: dragging === idx ? 0.25 : 1,
+                boxShadow: dragOver === idx && dragging !== idx ? '0 0 0 3px #c6f432, 0 8px 24px rgba(0,0,0,0.12)' : 'none',
+                borderRadius: '1rem',
+                cursor: dragging !== null ? 'grabbing' : 'grab',
+              }}>
+              <div style={{position:'relative'}}>
+                {dragging === null && (
+                  <div style={{position:'absolute',top:8,right:8,opacity:0.18,pointerEvents:'none',zIndex:1}}>
+                    <Move size={13} color="#374151"/>
+                  </div>
+                )}
+                {dragOver === idx && dragging !== idx && (
+                  <div style={{position:'absolute',inset:0,borderRadius:'1rem',border:'2.5px dashed #c6f432',pointerEvents:'none',zIndex:2,background:'rgba(198,244,50,0.06)'}}/>
+                )}
+                {renderItem(item, idx)}
+              </div>
             </div>
           ))}
         </div>
@@ -1843,12 +1900,14 @@
                     <div className="p-3 space-y-2.5 overflow-y-auto flex-1">
                       {sl.map(lead=>(
                         <FlatPipelineCard key={lead.id} lead={lead}
+                          stages={stages}
                           isDragging={dragLead===lead.id}
                           onDragStart={()=>setDragLead(lead.id)}
                           onDragEnd={()=>setDragLead(null)}
                           onRemove={()=>removeLead(lead.id)}
                           onEdit={()=>{}}
                           onClickCard={()=>setSelectedLead(lead)}
+                          onMoveToStage={(sid)=>moveLead(lead.id,sid)}
                         />
                       ))}
                       {sl.length===0&&<div className="text-center text-gray-300 text-xs py-6 font-medium">Arraste um lead aqui</div>}
@@ -3953,23 +4012,19 @@
                 const neutral = Math.abs(change)<0.05;
                 const fmted  = k.fmt==='c' ? fmtC(k.val) : k.fmt==='p' ? fmtP(k.val) : fmtN(k.val);
                 return (
-                  <div className={`bg-white rounded-2xl border shadow-sm p-5 hover:shadow-md transition-all ${k.hl?'border-[#c6f432]/50 ring-1 ring-[#c6f432]/20':'border-gray-100'}`}>
-                    <div className="flex items-start justify-between mb-3">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pr-2 leading-tight">{k.title}</p>
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{backgroundColor:k.color+'1a'}}>
-                        <k.icon size={14} style={{color:k.color}}/>
+                  <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{backgroundColor:k.color}}>
+                        <k.icon size={14} className="text-white"/>
                       </div>
+                      <p className="text-xs font-semibold text-gray-600 leading-tight">{k.title}</p>
                     </div>
-                    <p className="text-[1.6rem] font-black text-gray-900 tracking-tight leading-none mb-2">{fmted}</p>
+                    <p className="text-2xl font-black text-gray-900 leading-none mb-1.5">{fmted}</p>
                     {neutral ? (
                       <p className="text-[11px] text-gray-400">Sem variação</p>
                     ) : (
-                      <div className="flex items-center gap-1.5">
-                        <span className={`flex items-center gap-0.5 text-[11px] font-bold px-1.5 py-0.5 rounded-md ${isUp?'bg-emerald-500/10 text-emerald-600':'bg-red-500/10 text-red-500'}`}>
-                          {isUp ? <TrendingUp size={10}/> : <TrendingDown size={10}/>}
-                          {Math.abs(change).toFixed(1)}%
-                        </span>
-                        <span className="text-[11px] text-gray-400">vs. período anterior</span>
+                      <div className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md ${isUp?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-600'}`}>
+                        {isUp?'▲':'▼'} {Math.abs(change).toFixed(1)}%
                       </div>
                     )}
                   </div>
@@ -4019,7 +4074,7 @@
     };
 
     /* =========================================================
-       PIPELINE TAB (Kanban com drag-and-drop + estágios configuráveis)
+       PIPELINE TAB (Kanban + Funil · múltiplas pipelines)
        ========================================================= */
     const PipelineTab = ({ agentSlug, primaryColor }) => {
       const pc = primaryColor || '#c6f432';
@@ -4032,10 +4087,31 @@
       const [dragOverStage, setDragOverStage] = useState(null);
       const [selectedLead, setSelectedLead] = useState(null);
       const [openColorStage, setOpenColorStage] = useState(null);
+      const [view, setView] = useState('kanban');
+      const [showNewPipeline, setShowNewPipeline] = useState(false);
+      const [newPipelineName, setNewPipelineName] = useState('');
       const colorPickerRefs = useRef({});
-      const { stages, saveStages } = usePipelineStages(agentSlug);
-      const updStage = (id, patch) => saveStages(stages.map(s => s.id === id ? {...s, ...patch} : s));
+
       const toast = useToast();
+      const { pipelines, activePipelineId, setActivePipelineId, savePipelines, createPipeline, deletePipeline } = usePipelines(agentSlug);
+      const activePipeline = pipelines.find(p => p.id === activePipelineId) || pipelines[0];
+      const stages = activePipeline?.stages || DEFAULT_STAGES;
+      const saveStages = useCallback(async (ns) => {
+        await savePipelines(pipelines.map(p => p.id === (activePipeline?.id) ? { ...p, stages: ns } : p));
+      }, [pipelines, activePipeline, savePipelines]);
+      const updStage = (id, patch) => saveStages(stages.map(s => s.id === id ? {...s, ...patch} : s));
+
+      const handleCreatePipeline = async () => {
+        if (!newPipelineName.trim()) return;
+        await createPipeline(newPipelineName, pipelines);
+        setNewPipelineName(''); setShowNewPipeline(false);
+        toast('Pipeline criada!', 'success');
+      };
+      const handleDeletePipeline = async (id) => {
+        if (pipelines.length <= 1) { toast('Deve existir ao menos uma pipeline', 'error'); return; }
+        if (!confirm('Excluir esta pipeline?')) return;
+        await deletePipeline(id, pipelines, activePipelineId);
+      };
 
       // ── Calendar date filter ──
       const [showPipeCal, setShowPipeCal] = useState(false);
@@ -4100,9 +4176,20 @@
         return () => document.removeEventListener('mousedown', handler);
       }, [openColorStage]);
 
+      const pipelineContainerRef = useRef(null);
+
       const onDragStart = (id) => setDraggedId(id);
       const onDragEnd = () => { setDraggedId(null); setDragOverStage(null); };
       const onDragOver = (e, stageId) => { e.preventDefault(); setDragOverStage(stageId); };
+
+      const handleContainerDragOver = useCallback((e) => {
+        if (!pipelineContainerRef.current) return;
+        const rect = pipelineContainerRef.current.getBoundingClientRect();
+        const ZONE = 110;
+        const SPEED = 12;
+        if (e.clientX < rect.left + ZONE) pipelineContainerRef.current.scrollLeft -= SPEED;
+        else if (e.clientX > rect.right - ZONE) pipelineContainerRef.current.scrollLeft += SPEED;
+      }, []);
       const onDrop = async (e, stageId) => {
         e.preventDefault();
         const id = draggedId;
@@ -4118,6 +4205,16 @@
           toast(e2.message, 'error');
           load();
         }
+      };
+
+      const moveLeadDirect = async (id, stageId) => {
+        const lead = leads.find(l => l.id === id);
+        if (!lead || lead.stage === stageId) return;
+        setLeads(ls => ls.map(l => l.id === id ? { ...l, stage: stageId } : l));
+        try {
+          await api(`/leads/${id}`, { method: 'PATCH', body: JSON.stringify({ stage: stageId }) });
+          toast(`Lead movido para "${stages.find(s => s.id === stageId)?.title || stageId}"`, 'success');
+        } catch (e2) { toast(e2.message, 'error'); load(); }
       };
 
       const removeLead = async (id) => {
@@ -4149,12 +4246,64 @@
 
       if (loading) return <Loading />;
 
+      const displayLeads = filterLeadsByDate(leads);
+      const totalLeads = displayLeads.length || 1;
+      const byStage = {};
+      stages.forEach(s => { byStage[s.id] = []; });
+      displayLeads.forEach(l => {
+        const key = stages.find(s => s.id === l.stage) ? l.stage : stages[0]?.id;
+        if (key) byStage[key] = [...(byStage[key] || []), l];
+      });
+
       return (
         <div className="animate-in fade-in duration-500 flex flex-col gap-3" style={{minHeight:'calc(100vh - 220px)'}}>
-          <div className="flex justify-between items-center shrink-0">
-            <p className="text-sm text-gray-500 font-medium">
-              {pipeFrom ? filterLeadsByDate(leads).length : leads.length} leads · {stages.length} etapas
-            </p>
+
+          {/* Pipeline selector */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 shrink-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider mr-1">Pipeline:</span>
+              {pipelines.map(p => (
+                <div key={p.id} className="flex items-center gap-1">
+                  <button onClick={() => setActivePipelineId(p.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${activePipelineId===p.id?'text-black border-transparent shadow-sm':'border-gray-200 text-gray-600 bg-white hover:bg-gray-50'}`}
+                    style={activePipelineId===p.id?{backgroundColor:pc}:{}}>
+                    {p.name}
+                  </button>
+                  {pipelines.length > 1 && activePipelineId !== p.id && (
+                    <button onClick={() => handleDeletePipeline(p.id)} className="text-gray-300 hover:text-red-400 transition-colors p-0.5 rounded"><X size={11}/></button>
+                  )}
+                </div>
+              ))}
+              {showNewPipeline ? (
+                <div className="flex items-center gap-1.5">
+                  <input autoFocus value={newPipelineName} onChange={e=>setNewPipelineName(e.target.value)}
+                    onKeyDown={e=>{if(e.key==='Enter')handleCreatePipeline();if(e.key==='Escape')setShowNewPipeline(false);}}
+                    className="border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-bold outline-none focus:border-blue-400 w-36" placeholder="Nome da pipeline"/>
+                  <button onClick={handleCreatePipeline} className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-black" style={{backgroundColor:pc}}>Criar</button>
+                  <button onClick={()=>setShowNewPipeline(false)} className="text-gray-400 hover:text-gray-600 p-1 rounded"><X size={13}/></button>
+                </div>
+              ) : (
+                <button onClick={()=>setShowNewPipeline(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-dashed border-gray-300 text-xs font-bold text-gray-500 hover:border-gray-400 hover:text-gray-700 transition-all">
+                  <Plus size={12}/> Nova Pipeline
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Toolbar */}
+          <div className="flex justify-between items-center shrink-0 flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1">
+                {[{id:'kanban',label:'Kanban',Icon:KanbanSquare},{id:'funnel',label:'Funil',Icon:TrendingUp}].map(v=>(
+                  <button key={v.id} onClick={()=>setView(v.id)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${view===v.id?'bg-gray-900 text-white shadow':'text-gray-500 hover:bg-gray-50'}`}>
+                    <v.Icon size={13}/> {v.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-sm text-gray-500 font-medium">{displayLeads.length} leads</p>
+            </div>
             <div className="flex items-center gap-2 shrink-0">
               {/* Calendar date filter */}
               <div className="relative" ref={pipeCalRef}>
@@ -4198,7 +4347,7 @@
                 )}
               </div>
               <button onClick={() => setShowStageConfig(true)} className="px-3 py-2 rounded-xl border border-gray-200 bg-white font-bold text-sm flex items-center gap-2 hover:bg-gray-50 transition">
-                <Settings size={14}/> Configurar Funil
+                <Settings size={14}/> Etapas
               </button>
               <button onClick={() => setShowNew(true)} className="px-4 py-2 rounded-xl font-bold text-sm text-black flex items-center gap-2 hover:opacity-90 transition" style={{backgroundColor:pc}}>
                 <Plus size={16}/> Novo Lead
@@ -4206,10 +4355,10 @@
             </div>
           </div>
 
-          {/* Pipeline — colunas coloridas */}
-          <div className="flex gap-4 overflow-x-auto pb-4 flex-1">
+          {/* Kanban view */}
+          {view === 'kanban' && <div ref={pipelineContainerRef} onDragOver={handleContainerDragOver} className="flex gap-4 overflow-x-auto pb-4 flex-1">
             {stages.map((stage) => {
-              const items = filterLeadsByDate(leads.filter(l => l.stage === stage.id));
+              const items = byStage[stage.id] || [];
               const cc = STAGE_COLORS[stage.color] || STAGE_COLORS.gray;
               return (
                 <div key={stage.id}
@@ -4250,12 +4399,14 @@
                       <FlatPipelineCard
                         key={l.id}
                         lead={l}
+                        stages={stages}
                         isDragging={draggedId === l.id}
                         onDragStart={() => onDragStart(l.id)}
                         onDragEnd={onDragEnd}
                         onRemove={() => removeLead(l.id)}
                         onEdit={() => setEditLead(l)}
                         onClickCard={() => setSelectedLead(l)}
+                        onMoveToStage={(sid) => moveLeadDirect(l.id, sid)}
                       />
                     ))}
                     {items.length === 0 && (
@@ -4265,7 +4416,54 @@
                 </div>
               );
             })}
-          </div>
+          </div>}
+
+          {/* Funnel view */}
+          {view === 'funnel' && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex-1 overflow-y-auto">
+              <h3 className="font-black text-gray-900 mb-1">{activePipeline?.name} — Funil de Conv.</h3>
+              <p className="text-xs text-gray-400 mb-5">{displayLeads.length} leads no total</p>
+              <div className="space-y-3">
+                {stages.map((stage, i) => {
+                  const count = (byStage[stage.id] || []).length;
+                  const pct = Math.round((count / totalLeads) * 100);
+                  const prev = i > 0 ? (byStage[stages[i-1].id] || []).length : totalLeads;
+                  const conv = prev > 0 ? Math.round((count / prev) * 100) : 0;
+                  const dot = COLOR_HEX[stage.color] || '#9ca3af';
+                  const hdr = STAGE_HEADER_BG[stage.color] || '#6b7280';
+                  return (
+                    <div key={stage.id} className="flex items-center gap-4">
+                      <div className="w-36 shrink-0 flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{backgroundColor:dot}}/>
+                        <span className="text-sm font-bold text-gray-700 truncate">{stage.title}</span>
+                      </div>
+                      <div className="flex-1 h-9 bg-gray-100 rounded-xl overflow-hidden">
+                        <div className="h-full rounded-xl flex items-center justify-end pr-3 transition-all duration-500"
+                          style={{width:`${Math.max(4,pct)}%`,backgroundColor:hdr+'cc',minWidth:count>0?'40px':'0'}}>
+                          {count > 0 && <span className="text-xs font-extrabold text-white">{count}</span>}
+                        </div>
+                      </div>
+                      <div className="w-14 shrink-0 text-right">
+                        <span className="text-sm font-extrabold text-gray-900">{pct}%</span>
+                      </div>
+                      {i > 0 && (
+                        <div className="w-20 shrink-0">
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${conv>=50?'bg-green-100 text-green-700':conv>=25?'bg-yellow-100 text-yellow-700':'bg-red-100 text-red-700'}`}>
+                            Conv. {conv}%
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-6 pt-5 border-t border-gray-100 grid grid-cols-3 gap-4 text-center">
+                <div><p className="text-2xl font-black text-gray-900">{displayLeads.length}</p><p className="text-xs text-gray-400 font-medium">Total de Leads</p></div>
+                <div><p className="text-2xl font-black" style={{color:pc}}>{(byStage['closed']||byStage['ganho']||[]).length}</p><p className="text-xs text-gray-400 font-medium">Fechados</p></div>
+                <div><p className="text-2xl font-black text-blue-500">{fmtBRL(displayLeads.reduce((s,l)=>s+(parseFloat(l.amount)||0),0))}</p><p className="text-xs text-gray-400 font-medium">Valor Total</p></div>
+              </div>
+            </div>
+          )}
 
           {showNew && <NewLeadModal stages={stages} onClose={() => setShowNew(false)} onCreate={createLead} />}
           {editLead && <EditLeadModal lead={editLead} stages={stages} onClose={() => setEditLead(null)} onSave={updateLead} />}
@@ -4433,6 +4631,7 @@
     const StageConfigModal = ({ stages, onClose, onSave }) => {
       const [localStages, setLocalStages] = useState(stages.map(s => ({...s})));
       const [busy, setBusy] = useState(false);
+      const [openColorIdx, setOpenColorIdx] = useState(null);
       const update = (idx, patch) => setLocalStages(ls => ls.map((s, i) => i === idx ? {...s, ...patch} : s));
       const remove = (idx) => setLocalStages(ls => ls.filter((_, i) => i !== idx));
       const add = () => setLocalStages(ls => [...ls, { id: `stage_${Date.now()}`, title: 'Nova Etapa', sub: '', color: 'gray' }]);
@@ -4469,13 +4668,26 @@
                   </div>
                   <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: COLOR_HEX[s.color] || '#9ca3af' }}></div>
                   <input value={s.title} onChange={e => update(idx, { title: e.target.value })} className="flex-1 px-3 py-2 border rounded-lg text-sm font-bold outline-none focus:border-gray-400 bg-white" placeholder="Nome da etapa" />
-                  <input value={s.sub || ''} onChange={e => update(idx, { sub: e.target.value })} className="w-36 px-3 py-2 border rounded-lg text-sm outline-none focus:border-gray-400 bg-white" placeholder="Sub-título" />
-                  <div className="flex items-center gap-1 shrink-0">
-                    {colorKeys.map(c => (
-                      <button key={c} onClick={() => update(idx, { color: c })} title={c}
-                        className={`w-5 h-5 rounded-full transition-transform ${s.color === c ? 'scale-125 ring-2 ring-offset-1 ring-gray-400' : 'hover:scale-110'}`}
-                        style={{ backgroundColor: COLOR_HEX[c] }} />
-                    ))}
+                  <input value={s.sub || ''} onChange={e => update(idx, { sub: e.target.value })} className="w-32 px-3 py-2 border rounded-lg text-sm outline-none focus:border-gray-400 bg-white" placeholder="Sub-título" />
+                  <div className="relative shrink-0">
+                    <button onClick={() => setOpenColorIdx(openColorIdx === idx ? null : idx)}
+                      className="flex items-center gap-1 px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 text-xs font-bold text-gray-600 transition-all">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLOR_HEX[s.color] || '#9ca3af' }}/>
+                      Cores
+                      <ChevronDown size={11} className={`transition-transform ${openColorIdx === idx ? 'rotate-180' : ''}`}/>
+                    </button>
+                    {openColorIdx === idx && (
+                      <div className="absolute top-full right-0 mt-1 z-30 bg-white rounded-xl shadow-xl border border-gray-100 p-3 w-44">
+                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-2">Cor da etapa</p>
+                        <div className="flex flex-wrap gap-2">
+                          {colorKeys.map(c => (
+                            <button key={c} onClick={() => { update(idx, { color: c }); setOpenColorIdx(null); }} title={c}
+                              className={`w-6 h-6 rounded-full transition-all ${s.color === c ? 'scale-125 ring-2 ring-offset-1 ring-gray-400' : 'hover:scale-110'}`}
+                              style={{ backgroundColor: COLOR_HEX[c] }} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <button onClick={() => remove(idx)} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition shrink-0"><Trash2 size={14} /></button>
                 </div>
@@ -4506,6 +4718,7 @@
        INBOX TAB
        ========================================================= */
     const InboxTab = ({ agent, primaryColor }) => {
+      const pc = primaryColor || '#c6f432';
       const [conversations, setConversations] = useState([]);
       const [activeId, setActiveId] = useState(null);
       const [messages, setMessages] = useState([]);
@@ -4516,6 +4729,40 @@
       const [showNew, setShowNew] = useState(false);
       const toast = useToast();
       const messagesContainerRef = useRef(null);
+
+      // ── Date filter ──
+      const [showConvCal, setShowConvCal] = useState(false);
+      const [convCalMonth, setConvCalMonth] = useState(() => { const d = new Date(); d.setDate(1); return d; });
+      const [convFrom, setConvFrom] = useState(null);
+      const [convTo, setConvTo] = useState(null);
+      const convCalRef = useRef(null);
+
+      useEffect(() => {
+        const h = (e) => { if (convCalRef.current && !convCalRef.current.contains(e.target)) setShowConvCal(false); };
+        document.addEventListener('mousedown', h);
+        return () => document.removeEventListener('mousedown', h);
+      }, []);
+
+      const fmtCD = d => d ? d.toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit'}) : '--';
+      const convDays = (() => {
+        const yr = convCalMonth.getFullYear(), mo = convCalMonth.getMonth();
+        const first = new Date(yr, mo, 1), last = new Date(yr, mo+1, 0);
+        const days = [];
+        for (let i = 0; i < first.getDay(); i++) days.push(null);
+        for (let d = 1; d <= last.getDate(); d++) days.push(new Date(yr, mo, d));
+        return days;
+      })();
+      const handleConvDay = (day) => {
+        if (!day) return;
+        if (!convFrom || (convFrom && convTo)) { setConvFrom(day); setConvTo(null); }
+        else { if (day < convFrom) { setConvTo(convFrom); setConvFrom(day); } else { setConvTo(day); } setShowConvCal(false); }
+      };
+      const isConvDayInRange = (day) => {
+        if (!day || !convFrom) return false;
+        if (!convTo) return day.toDateString() === convFrom.toDateString();
+        return day >= convFrom && day <= convTo;
+      };
+      const clearConvCal = () => { setConvFrom(null); setConvTo(null); };
 
       const loadConvs = useCallback(async () => {
         setLoadingConvs(true);
@@ -4594,16 +4841,75 @@
         } catch (e) { toast(e.message, 'error'); }
       };
 
-      const filtered = conversations.filter(c => c.contact_name.toLowerCase().includes(search.toLowerCase()) || (c.last_message||'').toLowerCase().includes(search.toLowerCase()));
+      const filtered = conversations.filter(c => {
+        const matchSearch = c.contact_name.toLowerCase().includes(search.toLowerCase()) || (c.last_message||'').toLowerCase().includes(search.toLowerCase());
+        if (!matchSearch) return false;
+        if (!convFrom) return true;
+        const d = c.updated_at ? new Date(c.updated_at) : null;
+        if (!d) return true;
+        const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        if (!convTo) return day.toDateString() === convFrom.toDateString();
+        return day >= convFrom && day <= convTo;
+      });
       const active = conversations.find(c => c.id === activeId);
 
       return (
         <div className="animate-in fade-in duration-500 flex h-[620px] bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 overflow-hidden shadow-sm shrink-0">
           <div className="w-1/3 border-r border-gray-200 flex flex-col bg-gray-50/50 overflow-hidden shrink-0">
-            <div className="p-4 border-b border-gray-200 bg-white shrink-0 space-y-3">
+            <div className="p-4 border-b border-gray-200 bg-white shrink-0 space-y-2">
               <div className="relative"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" placeholder="Buscar nas conversas..." value={search} onChange={e => setSearch(e.target.value)} className="w-full pl-9 pr-4 py-2 bg-gray-100 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#c6f432]" /></div>
+              {/* Calendar date filter */}
+              <div className="relative" ref={convCalRef}>
+                <button onClick={() => setShowConvCal(v => !v)}
+                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-bold transition-all ${convFrom ? 'border-gray-700 bg-gray-900 text-white' : 'border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>
+                  <Calendar size={13}/>
+                  <span className="flex-1 text-left">{convFrom ? `${fmtCD(convFrom)} → ${fmtCD(convTo || convFrom)}` : 'Filtrar por período'}</span>
+                  {convFrom
+                    ? <span onClick={e=>{e.stopPropagation();clearConvCal();}} className="opacity-70 hover:opacity-100"><X size={11}/></span>
+                    : <ChevronDown size={11} className="opacity-50"/>
+                  }
+                </button>
+                {showConvCal && (
+                  <div className="absolute top-full left-0 mt-1 z-30 bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 w-72" onClick={e=>e.stopPropagation()}>
+                    <div className="flex items-center justify-between mb-3">
+                      <button onClick={() => setConvCalMonth(m => { const d=new Date(m); d.setMonth(d.getMonth()-1); d.setDate(1); return d; })}
+                        className="p-1 rounded-lg hover:bg-gray-100 text-gray-500"><ChevronLeft size={16}/></button>
+                      <span className="text-sm font-bold text-gray-800 capitalize">
+                        {convCalMonth.toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}
+                      </span>
+                      <button onClick={() => setConvCalMonth(m => { const d=new Date(m); d.setMonth(d.getMonth()+1); d.setDate(1); return d; })}
+                        className="p-1 rounded-lg hover:bg-gray-100 text-gray-500"><ChevronRight size={16}/></button>
+                    </div>
+                    <div className="grid grid-cols-7 gap-0.5 mb-1">
+                      {['D','S','T','Q','Q','S','S'].map((d,i)=>(<div key={i} className="text-center text-[10px] font-black text-gray-400 uppercase py-1">{d}</div>))}
+                    </div>
+                    <div className="grid grid-cols-7 gap-0.5">
+                      {convDays.map((day,i) => (
+                        <button key={i} onClick={() => handleConvDay(day)} disabled={!day}
+                          className={`w-full aspect-square rounded-lg text-xs font-bold transition-all flex items-center justify-center
+                            ${!day ? 'opacity-0 pointer-events-none' : ''}
+                            ${day && isConvDayInRange(day) ? 'bg-gray-900 text-white' : ''}
+                            ${day && !isConvDayInRange(day) ? 'hover:bg-gray-100 text-gray-700' : ''}`}>
+                          {day ? day.getDate() : ''}
+                        </button>
+                      ))}
+                    </div>
+                    {convFrom && (
+                      <button onClick={clearConvCal} className="mt-3 w-full text-xs font-bold text-gray-500 hover:text-gray-800 flex items-center justify-center gap-1.5 py-1.5 border border-gray-200 rounded-xl hover:bg-gray-50 transition">
+                        <X size={11}/> Limpar período
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
               <button onClick={() => setShowNew(true)} className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-black text-[#c6f432] text-xs font-bold"><Plus size={14}/> Nova conversa</button>
             </div>
+            {convFrom && !loadingConvs && (
+              <div className="px-4 py-2 bg-gray-900 flex items-center justify-between shrink-0">
+                <span className="text-[10px] font-bold text-white/70">{filtered.length} conversa{filtered.length!==1?'s':''} · {fmtCD(convFrom)}{convTo?' → '+fmtCD(convTo):''}</span>
+                <button onClick={clearConvCal} className="text-white/50 hover:text-white transition"><X size={11}/></button>
+              </div>
+            )}
             <div className="overflow-y-auto flex-1">
               {loadingConvs ? <Loading small /> : filtered.length === 0 ? <Empty msg="Nenhuma conversa" /> : filtered.map(c => (
                 <div key={c.id} className={`group p-4 border-b border-gray-100 cursor-pointer transition-colors shrink-0 ${activeId === c.id ? 'bg-white border-l-4 border-l-[#c6f432]' : 'hover:bg-gray-100/50'}`} onClick={() => setActiveId(c.id)}>
@@ -6259,66 +6565,188 @@
       );
     };
 
-    const FlatPipelineCard = ({ lead, isDragging, onDragStart, onDragEnd, onRemove, onEdit, onClickCard }) => {
+    const WaIcon = () => (
+      <svg viewBox="0 0 24 24" className="w-3 h-3" fill="currentColor">
+        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+      </svg>
+    );
+
+    const FlatPipelineCard = ({ lead, stages, isDragging, onDragStart, onDragEnd, onRemove, onEdit, onClickCard, onMoveToStage }) => {
       const badge = { blue:'bg-blue-100 text-blue-700', orange:'bg-orange-100 text-orange-700', green:'bg-green-100 text-green-700', red:'bg-red-100 text-red-700', yellow:'bg-yellow-100 text-yellow-700', default:'bg-gray-100 text-gray-600' };
       const [expanded, setExpanded] = useState(false);
       const [dragging, setDragging] = useState(false);
-      const fmtFullDate = (iso) => { if(!iso) return ''; try { return new Date(iso.replace(' ','T')+'Z').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}); } catch { return ''; } };
+      const [showStageDrop, setShowStageDrop] = useState(false);
+      const [dropPos, setDropPos] = useState(null);
+      const pillRef = useRef(null);
+
+      const dropRef = useRef(null);
+
+      /* Fecha o dropdown ao clicar fora ou ao scrollar a pipeline */
+      useEffect(() => {
+        if (!showStageDrop) return;
+        const close = (e) => {
+          if (dropRef.current && dropRef.current.contains(e.target)) return;
+          if (pillRef.current && pillRef.current.contains(e.target)) return;
+          setShowStageDrop(false);
+        };
+        const closeScroll = () => setShowStageDrop(false);
+        document.addEventListener('mousedown', close);
+        document.addEventListener('scroll', closeScroll, true);
+        return () => {
+          document.removeEventListener('mousedown', close);
+          document.removeEventListener('scroll', closeScroll, true);
+        };
+      }, [showStageDrop]);
+
+      const openDrop = (e) => {
+        e.stopPropagation();
+        if (!stages || !stages.length) return;
+        if (showStageDrop) { setShowStageDrop(false); return; }
+        const rect = pillRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        /* Decide abrir abaixo ou acima dependendo do espaço disponível */
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const dropH = stages.length * 36 + 40; // estimativa de altura
+        const openAbove = spaceBelow < dropH && rect.top > dropH;
+        setDropPos({
+          left: rect.left,
+          top: openAbove ? rect.top - dropH - 4 : rect.bottom + 4,
+        });
+        setShowStageDrop(true);
+      };
+
+      const fmtFullDate = (iso) => {
+        if (!iso) return '';
+        try { return new Date(iso).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}); }
+        catch { return ''; }
+      };
+
+      const currentStage = stages?.find(s => s.id === lead.stage);
+      const hasContacts = lead.phone || lead.email;
+
       return (
-        <div
-          draggable
-          onDragStart={()=>{setDragging(true);onDragStart&&onDragStart();}}
-          onDragEnd={()=>{setDragging(false);onDragEnd&&onDragEnd();}}
-          onClick={()=>{ if(!dragging && onClickCard) onClickCard(); }}
-          className={`group bg-white border border-gray-100 rounded-xl shadow-sm hover:border-gray-200 hover:shadow-md transition-all cursor-pointer ${isDragging ? 'opacity-30' : ''}`}>
-          <div className="p-3">
-            <div className="flex justify-between items-start mb-1.5">
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-sm text-gray-900 truncate leading-tight">{lead.name}</p>
-                <p className="text-[10px] text-gray-400 font-medium truncate">{lead.company || '—'}</p>
+        <>
+          <div
+            draggable
+            onDragStart={()=>{setDragging(true);onDragStart&&onDragStart();}}
+            onDragEnd={()=>{setDragging(false);onDragEnd&&onDragEnd();}}
+            onClick={()=>{ if(!dragging && onClickCard) onClickCard(); }}
+            className={`group bg-white border border-gray-100 rounded-xl shadow-sm hover:border-gray-200 hover:shadow-md transition-all cursor-pointer ${isDragging ? 'opacity-30' : ''}`}>
+            <div className="p-3">
+
+              {/* Nome + empresa + ações */}
+              <div className="flex justify-between items-start mb-1.5">
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-sm text-gray-900 truncate leading-tight">{lead.name}</p>
+                  <p className="text-[10px] text-gray-400 font-medium truncate">{lead.company || '—'}</p>
+                </div>
+                <div className="flex items-center gap-1 ml-1 opacity-0 group-hover:opacity-100 transition shrink-0">
+                  <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onEdit();}} className="p-1 hover:bg-gray-100 rounded"><Edit3 size={10} className="text-gray-500"/></button>
+                  <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onRemove();}} className="p-1 hover:bg-red-50 rounded"><Trash2 size={10} className="text-red-400"/></button>
+                </div>
               </div>
-              <div className="flex items-center gap-1 ml-1 opacity-0 group-hover:opacity-100 transition shrink-0">
-                <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onEdit();}} className="p-1 hover:bg-gray-100 rounded"><Edit3 size={10} className="text-gray-500"/></button>
-                <button onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onRemove();}} className="p-1 hover:bg-red-50 rounded"><Trash2 size={10} className="text-red-400"/></button>
+
+              {/* Valor / Score + Data */}
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-gray-900">{Number(lead.amount)>0?`R$ ${Number(lead.amount).toLocaleString('pt-BR')}`:`Score: ${lead.score||0}`}</span>
+                <span className="text-[10px] text-gray-400">{fmtFullDate(lead.created_at)||relTime(lead.created_at)}</span>
               </div>
-            </div>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-bold text-gray-900">{Number(lead.amount)>0?`R$ ${Number(lead.amount).toLocaleString('pt-BR')}`:`Score: ${lead.score||0}`}</span>
-              <span className="text-[10px] text-gray-400" title={fmtFullDate(lead.created_at)}>{fmtFullDate(lead.created_at)||relTime(lead.created_at)}</span>
-            </div>
-            {/* Contatos visíveis */}
-            {(lead.phone || lead.email) && (
-              <div className="flex flex-col gap-0.5 mb-1.5">
-                {lead.phone && (
-                  <a href={`tel:${lead.phone}`} onClick={e=>e.stopPropagation()}
-                    className="flex items-center gap-1 text-[10px] text-green-700 hover:text-green-800 font-medium">
-                    <Phone size={9}/> {lead.phone}
-                  </a>
-                )}
-                {lead.email && (
-                  <a href={`mailto:${lead.email}`} onClick={e=>e.stopPropagation()}
-                    className="flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 font-medium truncate">
-                    <Mail size={9}/> {lead.email}
-                  </a>
-                )}
-              </div>
-            )}
-            <div className="flex items-center justify-between">
-              <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wide ${badge[lead.color_type]||badge.default}`}>{lead.tag||'—'}</span>
-              {(lead.notes||lead.conversation_summary) && (
-                <button onClick={e=>{e.stopPropagation();setExpanded(v=>!v);}} className="text-[9px] text-gray-400 hover:text-gray-600 font-bold flex items-center gap-0.5">
-                  💬 {expanded?'▲':'▼'}
+
+              {/* Seletor de etapa — pill colorido (sozinho na linha) */}
+              <div className="mb-2">
+                <button
+                  ref={pillRef}
+                  onMouseDown={e=>e.stopPropagation()}
+                  onClick={openDrop}
+                  className="inline-flex items-center gap-1 px-2 py-[3px] rounded-md border text-[10px] font-bold transition-all hover:brightness-95 active:scale-95 max-w-full"
+                  style={{
+                    backgroundColor: currentStage ? (STAGE_HEADER_BG[currentStage.color]||'#6b7280')+'22' : '#f3f4f6',
+                    borderColor:     currentStage ? (STAGE_HEADER_BG[currentStage.color]||'#6b7280')+'55' : '#e5e7eb',
+                    color:           currentStage ? (STAGE_HEADER_BG[currentStage.color]||'#6b7280') : '#6b7280',
+                  }}>
+                  <div className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{backgroundColor: currentStage ? STAGE_HEADER_BG[currentStage.color]||'#9ca3af' : '#9ca3af'}}/>
+                  <span className="truncate max-w-[120px]">{currentStage?.title || lead.stage}</span>
+                  {stages && stages.length > 0 &&
+                    <ChevronDown size={9} className={`shrink-0 transition-transform ${showStageDrop?'rotate-180':''}`}/>}
                 </button>
-              )}
-            </div>
-            {expanded && (lead.notes||lead.conversation_summary) && (
-              <div className="mt-2 p-2 bg-blue-50 border border-blue-100 rounded-lg">
-                <p className="text-[9px] font-bold text-blue-500 uppercase tracking-wider mb-1">Resumo</p>
-                <p className="text-[10px] text-gray-600 leading-relaxed">{lead.conversation_summary || lead.notes}</p>
               </div>
-            )}
+
+              {/* Tag + notas */}
+              <div className="flex items-center justify-between">
+                <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wide ${badge[lead.color_type]||badge.default}`}>{lead.tag||'—'}</span>
+                {(lead.notes||lead.conversation_summary) && (
+                  <button onClick={e=>{e.stopPropagation();setExpanded(v=>!v);}} className="text-[9px] text-gray-400 hover:text-gray-600 font-bold flex items-center gap-0.5">
+                    💬 {expanded?'▲':'▼'}
+                  </button>
+                )}
+              </div>
+              {expanded && (lead.notes||lead.conversation_summary) && (
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-100 rounded-lg">
+                  <p className="text-[9px] font-bold text-blue-500 uppercase tracking-wider mb-1">Resumo</p>
+                  <p className="text-[10px] text-gray-600 leading-relaxed">{lead.conversation_summary || lead.notes}</p>
+                </div>
+              )}
+
+              {/* Ícones de contato — rodapé do card */}
+              {hasContacts && (
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-50">
+                  {lead.phone && (
+                    <a href={`tel:${lead.phone}`} onClick={e=>e.stopPropagation()} title={lead.phone}
+                      className="flex items-center gap-1 text-[10px] font-medium text-gray-400 hover:text-green-600 transition-colors">
+                      <Phone size={11}/> <span className="truncate max-w-[70px]">{lead.phone}</span>
+                    </a>
+                  )}
+                  {lead.email && (
+                    <a href={`mailto:${lead.email}`} onClick={e=>e.stopPropagation()} title={lead.email}
+                      className="flex items-center gap-1 text-[10px] font-medium text-gray-400 hover:text-blue-500 transition-colors min-w-0">
+                      <Mail size={11}/> <span className="truncate max-w-[70px]">{lead.email}</span>
+                    </a>
+                  )}
+                  {lead.phone && (
+                    <a href={`https://wa.me/${lead.phone.replace(/\D/g,'')}`} target="_blank" rel="noreferrer"
+                      onClick={e=>e.stopPropagation()} title={`WhatsApp: ${lead.phone}`}
+                      className="ml-auto text-gray-400 hover:text-[#25D366] transition-colors shrink-0">
+                      <WaIcon/>
+                    </a>
+                  )}
+                </div>
+              )}
+
+            </div>
           </div>
-        </div>
+
+          {/* Dropdown de etapa via portal — nunca clippado pela coluna */}
+          {showStageDrop && dropPos && stages && createPortal(
+            <div
+              ref={dropRef}
+              style={{position:'fixed', left:dropPos.left, top:dropPos.top, zIndex:9999, minWidth:180}}
+              className="bg-white rounded-xl shadow-2xl border border-gray-100 py-1.5 animate-in fade-in zoom-in-95 duration-100"
+              onMouseDown={e=>e.stopPropagation()}
+              onClick={e=>e.stopPropagation()}>
+              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider px-3 pt-0.5 pb-1.5 border-b border-gray-100">
+                Mover para etapa
+              </p>
+              {stages.map(s => {
+                const active = s.id === lead.stage;
+                const hex = STAGE_HEADER_BG[s.color] || '#9ca3af';
+                return (
+                  <button key={s.id}
+                    onClick={e=>{e.stopPropagation();onMoveToStage&&onMoveToStage(s.id);setShowStageDrop(false);}}
+                    className="w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors hover:bg-gray-50"
+                    style={{backgroundColor: active ? hex+'14' : undefined}}>
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{backgroundColor: hex}}/>
+                    <span className={`flex-1 text-[11px] font-bold truncate ${active ? 'text-gray-900' : 'text-gray-600'}`}>
+                      {s.title}
+                    </span>
+                    {active && <CheckCircle2 size={9} className="shrink-0" style={{color: hex}}/>}
+                  </button>
+                );
+              })}
+            </div>,
+            document.body
+          )}
+        </>
       );
     };
 

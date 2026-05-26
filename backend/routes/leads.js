@@ -23,7 +23,7 @@ router.get('/', authRequired, async (req, res) => {
 });
 
 router.post('/', authRequired, async (req, res) => {
-  const { agent_slug, name, company, score, amount, tag, color_type, stage, phone, email } = req.body || {};
+  const { agent_slug, name, company, score, amount, tag, color_type, stage, phone, email, notes } = req.body || {};
   if (!agent_slug || !name) return res.status(400).json({ error: 'agent_slug e name são obrigatórios' });
 
   const st = (stage && typeof stage === 'string') ? stage : 'new';
@@ -40,24 +40,36 @@ router.post('/', authRequired, async (req, res) => {
 
   const position = maxRow ? maxRow.position + 1 : 0;
 
-  const { data: lead, error } = await supabase
+  const basePayload = {
+    user_id: req.user.uid,
+    agent_slug,
+    name,
+    company: company || null,
+    score: score || 0,
+    amount: amount || 0,
+    tag: tag || null,
+    color_type: color_type || 'default',
+    stage: st,
+    position,
+  };
+
+  // Tenta inserir com as colunas extras (phone / email / notes)
+  // Se o Supabase reclamar que a coluna não existe (migration pendente),
+  // cai no fallback com apenas os campos base.
+  let { data: lead, error } = await supabase
     .from('leads')
-    .insert({
-      user_id: req.user.uid,
-      agent_slug,
-      name,
-      company: company || null,
-      score: score || 0,
-      amount: amount || 0,
-      tag: tag || null,
-      color_type: color_type || 'default',
-      stage: st,
-      position,
-      phone: phone || null,
-      email: email || null,
-    })
+    .insert({ ...basePayload, phone: phone || null, email: email || null, notes: notes || null })
     .select()
     .single();
+
+  if (error && error.message && error.message.includes('coluna')) {
+    // Migration ainda não foi rodada — salva sem os campos extras
+    ({ data: lead, error } = await supabase
+      .from('leads')
+      .insert(basePayload)
+      .select()
+      .single());
+  }
 
   if (error) return res.status(500).json({ error: error.message });
   res.status(201).json({ lead });

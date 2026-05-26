@@ -344,3 +344,13 @@ ALTER TABLE task_executors ADD COLUMN IF NOT EXISTS photo_url TEXT;
 ALTER TABLE task_clients   ADD COLUMN IF NOT EXISTS photo_url TEXT;
 
 NOTIFY pgrst, 'reload schema';
+
+-- ============================================================
+-- MIGRATION: Contatos e resumo nos leads
+-- ============================================================
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS conversation_summary TEXT;
+
+NOTIFY pgrst, 'reload schema';
