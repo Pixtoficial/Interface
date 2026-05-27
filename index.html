@@ -44,7 +44,8 @@
       Target, CheckCircle2, AlertTriangle, Receipt, Search, Filter, Star, Activity, Ticket,
       Workflow, History, CheckCircle, BarChart3, Bell, Send, Trash2, Edit3, X, Loader2, RefreshCw,
       ChevronDown, ChevronLeft, ChevronRight, UserPlus, Save, FileWarning, FileCheck2, MapPin, TrendingDown,
-      BookOpen, Moon, Sun, Move, Link, Unlink, ZoomIn, ZoomOut, Maximize2, Phone
+      BookOpen, Moon, Sun, Move, Link, Unlink, ZoomIn, ZoomOut, Maximize2, Phone,
+      MousePointer2, Square, Circle, StickyNote, Type, Minus, Bold, Italic, AlignLeft, AlignCenter, AlignRight
     } from 'https://esm.sh/lucide-react@0.292.0';
 
 
@@ -1362,6 +1363,46 @@
       return Array.from({length: pts}, (_,i) => Math.max(0, Math.round(base * (0.55 + (Math.sin(s*0.013+i*1.7)*0.5+0.5)*0.9))));
     };
 
+    /* ---- KPI Manual Override Modal ---- */
+    const KPIManualModal = ({ kpi, period, overrides, onSave, onClear, onClose, primaryColor }) => {
+      const overrideKey = `${period}__${kpi.title}`;
+      const existing = overrides[overrideKey];
+      const [val, setVal] = useState(existing !== undefined ? String(existing) : String(kpi.val));
+      const hint = kpi.fmt==='c' ? 'Valor em R$ (ex: 50000)' : kpi.fmt==='p' ? 'Percentual (ex: 12.5)' : 'Número inteiro';
+      return createPortal(
+        <div className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4" onClick={onClose}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={e=>e.stopPropagation()}>
+            <div className="flex items-start gap-3 mb-5">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{backgroundColor:kpi.color+'22'}}>
+                <kpi.icon size={18} style={{color:kpi.color}}/>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-black text-gray-900 leading-tight">{kpi.title}</p>
+                <p className="text-xs text-gray-400 mt-0.5">Período: {period}</p>
+              </div>
+              <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 shrink-0"><X size={15}/></button>
+            </div>
+            <div className="mb-4">
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block">{hint}</label>
+              <input type="number" value={val} onChange={e=>setVal(e.target.value)} step={kpi.fmt==='p'?'0.1':'1'}
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-2xl font-black text-gray-900 outline-none focus:border-gray-400 transition-all text-center"
+                autoFocus onKeyDown={e=>e.key==='Enter'&&onSave(Number(val))}/>
+              {existing!==undefined&&(
+                <button onClick={onClear} className="mt-2 text-xs text-red-500 hover:text-red-700 font-bold">✕ Remover valor manual</button>
+              )}
+            </div>
+            <p className="text-[11px] text-gray-400 mb-4">Valor salvo permanentemente por período. Use para comparar receitas entre datas.</p>
+            <div className="flex gap-2">
+              <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 hover:bg-gray-50">Cancelar</button>
+              <button onClick={()=>onSave(Number(val))} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-black hover:opacity-90 transition-all"
+                style={{backgroundColor:primaryColor}}>Salvar</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      );
+    };
+
     /* ---- Overview Tab — design inspirado em dashmaterializa ---- */
     const AdminOverviewTab = ({ primaryColor }) => {
       const [stats, setStats] = useState(null);
@@ -1403,6 +1444,24 @@
         setShowDatePicker(false);
       };
       const toast = useToast();
+
+      const [kpiOverrides, setKpiOverrides] = useState(() => {
+        try { return JSON.parse(localStorage.getItem('pixt_kpi_admin') || '{}'); } catch { return {}; }
+      });
+      const [editKPIItem, setEditKPIItem] = useState(null);
+      const periodKey = dateRange.label;
+      const saveKPIOverride = (key, val) => {
+        const upd = { ...kpiOverrides, [key]: val };
+        setKpiOverrides(upd);
+        localStorage.setItem('pixt_kpi_admin', JSON.stringify(upd));
+        setEditKPIItem(null);
+      };
+      const clearKPIOverride = (key) => {
+        const upd = { ...kpiOverrides }; delete upd[key];
+        setKpiOverrides(upd);
+        localStorage.setItem('pixt_kpi_admin', JSON.stringify(upd));
+        setEditKPIItem(null);
+      };
 
       useEffect(() => {
         api('/admin/stats').then(d => setStats(d)).catch(e => toast(e.message,'error')).finally(() => setBusy(false));
@@ -1520,15 +1579,24 @@
           {tab==='resumo' && (
             <>
               {/* 8 KPI cards */}
-              <DraggableKPIGrid storageKey="admin-overview" items={kpis} cols="grid-cols-2 lg:grid-cols-4" renderItem={(k,idx)=>{
-                const change = k.prev&&k.prev!==0 ? ((k.val-k.prev)/Math.abs(k.prev))*100 : 0;
-                const isUp   = k.inv ? change<0 : change>0;
+              <DraggableKPIGrid storageKey="admin-overview" items={kpis} cols="grid-cols-2 lg:grid-cols-4" renderItem={(k)=>{
+                const oKey = `${periodKey}__${k.title}`;
+                const ov = kpiOverrides[oKey];
+                const displayVal = ov !== undefined ? Number(ov) : k.val;
+                const change = k.prev&&k.prev!==0 ? ((displayVal-k.prev)/Math.abs(k.prev))*100 : 0;
+                const isUp = k.inv ? change<0 : change>0;
                 const neutral = Math.abs(change)<0.05;
-                const fmted  = k.fmt==='c' ? fmtC(k.val) : k.fmt==='p' ? fmtP(k.val) : fmtN(k.val);
+                const fmted = k.fmt==='c' ? fmtC(displayVal) : k.fmt==='p' ? fmtP(displayVal) : fmtN(displayVal);
                 return (
-                  <div className={`bg-white rounded-2xl border shadow-sm p-5 hover:shadow-md transition-all ${k.hl?'border-[#c6f432]/50 ring-1 ring-[#c6f432]/20':'border-gray-100'}`}>
+                  <div className={`relative bg-white rounded-2xl border shadow-sm p-5 hover:shadow-md transition-all group ${k.hl?'border-[#c6f432]/50 ring-1 ring-[#c6f432]/20':'border-gray-100'}`}>
+                    {ov!==undefined&&<div className="absolute top-2 left-2 w-2 h-2 rounded-full bg-amber-400" title="Valor manual"/>}
+                    <button onClick={e=>{e.stopPropagation();setEditKPIItem(k);}}
+                      className="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-all z-10"
+                      title="Configurar valor manualmente">
+                      <Edit3 size={11}/>
+                    </button>
                     <div className="flex items-start justify-between mb-3">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pr-2 leading-tight">{k.title}</p>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pr-8 leading-tight">{k.title}</p>
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{backgroundColor:k.color+'1a'}}>
                         <k.icon size={14} style={{color:k.color}}/>
                       </div>
@@ -1598,6 +1666,17 @@
                 <DailyBar data={stageData} color="#ec4899" label="Leads" formatter={fmtN}/>
               </div>
             </div>
+          )}
+          {editKPIItem && (
+            <KPIManualModal
+              kpi={editKPIItem}
+              period={periodKey}
+              overrides={kpiOverrides}
+              onSave={val => saveKPIOverride(`${periodKey}__${editKPIItem.title}`, val)}
+              onClear={() => clearKPIOverride(`${periodKey}__${editKPIItem.title}`)}
+              onClose={() => setEditKPIItem(null)}
+              primaryColor={primaryColor}
+            />
           )}
         </div>
       );
@@ -1955,8 +2034,347 @@
       );
     };
 
+    /* =========================================================
+       MIND MAP — MindMapCanvas (Miro-style whiteboard)
+       ========================================================= */
+    const MM_COLORS = ['#ffffff','#c6f432','#fecaca','#bfdbfe','#fef08a','#e9d5ff','transparent'];
+    const MM_BORDER_COLORS = ['#000000','#c6f432','#ef4444','#3b82f6','#eab308','#a855f7','transparent'];
+
+    const mmPort = (el, p) => {
+      if (!el) return {x:0,y:0};
+      if (p==='T') return {x:el.x+el.w/2, y:el.y};
+      if (p==='B') return {x:el.x+el.w/2, y:el.y+el.h};
+      if (p==='L') return {x:el.x,        y:el.y+el.h/2};
+      if (p==='R') return {x:el.x+el.w,   y:el.y+el.h/2};
+      return {x:el.x+el.w/2, y:el.y+el.h/2};
+    };
+
+    const mmPath = (x1,y1,p1,x2,y2,p2,sty) => {
+      if (sty==='straight') return `M ${x1} ${y1} L ${x2} ${y2}`;
+      if (sty==='curved') {
+        const w=Math.max(Math.abs(x2-x1)*.5,Math.abs(y2-y1)*.5,40);
+        const c=(x,y,p)=>({x:x+(p==='R'?w:p==='L'?-w:0),y:y+(p==='B'?w:p==='T'?-w:0)});
+        const a=c(x1,y1,p1),b=c(x2,y2,p2);
+        return `M ${x1} ${y1} C ${a.x} ${a.y}, ${b.x} ${b.y}, ${x2} ${y2}`;
+      }
+      const mg=20;
+      const m1x=x1+(p1==='R'?mg:p1==='L'?-mg:0),m1y=y1+(p1==='B'?mg:p1==='T'?-mg:0);
+      const m2x=x2+(p2==='R'?mg:p2==='L'?-mg:0),m2y=y2+(p2==='B'?mg:p2==='T'?-mg:0);
+      const mx=(m1x+m2x)/2,my=(m1y+m2y)/2;
+      const h1=p1==='L'||p1==='R',h2=p2==='L'||p2==='R';
+      if (h1&&h2)  return `M ${x1} ${y1} L ${m1x} ${y1} L ${mx} ${y1} L ${mx} ${y2} L ${m2x} ${y2} L ${x2} ${y2}`;
+      if (!h1&&!h2) return `M ${x1} ${y1} L ${x1} ${m1y} L ${x1} ${my} L ${x2} ${my} L ${x2} ${m2y} L ${x2} ${y2}`;
+      if (h1&&!h2)  return `M ${x1} ${y1} L ${m1x} ${y1} L ${m1x} ${m2y} L ${x2} ${m2y} L ${x2} ${y2}`;
+      return `M ${x1} ${y1} L ${x1} ${m1y} L ${m2x} ${m1y} L ${m2x} ${y2} L ${x2} ${y2}`;
+    };
+
+    const MindMapCanvas = ({ storageKey, primaryColor: pc0, initialTitle='Estratégia', height='calc(100vh - 200px)', showHeader=true }) => {
+      const BRAND = pc0||'#c6f432';
+      const ctnRef = useRef(null);
+      const rootRef = useRef(null);
+
+      const [cam, setCam] = useState({x:0,y:0,z:1});
+
+      const mkDefault = () => [
+        {id:'1',type:'RECT',x:300,y:200,w:220,h:80,text:initialTitle,bg:'#ffffff',border:BRAND,fontSize:18,fontWeight:'bold',textAlign:'center'}
+      ];
+
+      const [els, setEls] = useState(()=>{
+        try{const s=localStorage.getItem(storageKey+'_els');if(s)return JSON.parse(s);}catch{}
+        return mkDefault();
+      });
+      const [lns, setLns] = useState(()=>{
+        try{const s=localStorage.getItem(storageKey+'_lns');if(s)return JSON.parse(s);}catch{}
+        return [];
+      });
+
+      useEffect(()=>{try{localStorage.setItem(storageKey+'_els',JSON.stringify(els));}catch{}},[els]);
+      useEffect(()=>{try{localStorage.setItem(storageKey+'_lns',JSON.stringify(lns));}catch{}},[lns]);
+
+      const [tool, setTool] = useState('SELECT');
+      const [lnSty, setLnSty] = useState('stepped');
+      const [selId, setSelId] = useState(null);
+      const [editId, setEditId] = useState(null);
+      const [ctxMenu, setCtxMenu] = useState(null);
+      const [act, setAct] = useState({type:'NONE'});
+
+      useEffect(()=>{
+        const el=ctnRef.current;
+        if(!el) return;
+        const h=(e)=>{
+          e.preventDefault();
+          const r=el.getBoundingClientRect();
+          const mx=e.clientX-r.left,my=e.clientY-r.top,d=-e.deltaY*.002;
+          setCam(c=>{const z=Math.min(Math.max(.1,c.z+d),3);return{x:mx-(mx-c.x)/c.z*z,y:my-(my-c.y)/c.z*z,z};});
+        };
+        el.addEventListener('wheel',h,{passive:false});
+        return()=>el.removeEventListener('wheel',h);
+      },[]);
+
+      const toCvs=(cx,cy)=>{
+        const r=ctnRef.current?.getBoundingClientRect()||{left:0,top:0};
+        return{x:(cx-r.left-cam.x)/cam.z,y:(cy-r.top-cam.y)/cam.z};
+      };
+
+      const onPtrDown=(e)=>{
+        if(ctxMenu&&!e.target.closest('.mm-ctx'))setCtxMenu(null);
+        if(e.button===2)return;
+        if(e.button===1||(e.button===0&&e.shiftKey)){setAct({type:'PAN',sx:e.clientX,sy:e.clientY,cx:cam.x,cy:cam.y});return;}
+        const tid=e.target.getAttribute('data-mmid')||e.target.closest('[data-mmid]')?.getAttribute('data-mmid');
+        const p=toCvs(e.clientX,e.clientY);
+        if(editId&&tid!==editId)setEditId(null);
+        if(tid){
+          setSelId(tid);
+          if(tool==='LINE')setAct({type:'LINE',fid:tid,fp:'C',ex:p.x,ey:p.y});
+          else if(tool==='SELECT'){const el=els.find(el=>el.id===tid);setAct({type:'DRAG',id:tid,ox:p.x-el.x,oy:p.y-el.y});}
+        }else{
+          setSelId(null);
+          if(tool==='SELECT')setAct({type:'PAN',sx:e.clientX,sy:e.clientY,cx:cam.x,cy:cam.y});
+          else if(tool!=='LINE'){
+            const nid=Date.now().toString();
+            let ne={id:nid,type:tool,x:p.x,y:p.y,text:'',fontSize:16,fontWeight:'normal',textAlign:'center'};
+            if(tool==='RECT'||tool==='CIRCLE')ne={...ne,w:150,h:80,bg:'#ffffff',border:'#000000'};
+            else if(tool==='STICKY')ne={...ne,w:150,h:150,bg:'#fef08a',border:'transparent'};
+            else if(tool==='TEXT')ne={...ne,w:200,h:50,bg:'transparent',border:'transparent',text:'Novo Texto'};
+            setEls(prev=>[...prev,ne]);setTool('SELECT');setSelId(nid);setEditId(nid);
+          }
+        }
+      };
+
+      const onCtxMenu=(e)=>{
+        e.preventDefault();
+        if(!e.target.getAttribute('data-mmid')&&!e.target.closest('[data-mmid]')){
+          const r=rootRef.current?.getBoundingClientRect()||{left:0,top:0};
+          setCtxMenu({x:e.clientX-r.left,y:e.clientY-r.top});
+          setSelId(null);
+        }
+      };
+
+      const onPtrMove=(e)=>{
+        if(act.type==='PAN')setCam(c=>({...c,x:act.cx+(e.clientX-act.sx),y:act.cy+(e.clientY-act.sy)}));
+        else if(act.type==='DRAG'){const p=toCvs(e.clientX,e.clientY);setEls(prev=>prev.map(el=>el.id===act.id?{...el,x:p.x-act.ox,y:p.y-act.oy}:el));}
+        else if(act.type==='LINE'){const p=toCvs(e.clientX,e.clientY);setAct(a=>({...a,ex:p.x,ey:p.y}));}
+      };
+
+      const onPtrUp=(e)=>{
+        if(act.type==='LINE'){
+          const te=document.elementFromPoint(e.clientX,e.clientY);
+          const tid=te?.getAttribute('data-mmid')||te?.closest?.('[data-mmid]')?.getAttribute?.('data-mmid');
+          if(tid&&tid!==act.fid){
+            const tel=els.find(el=>el.id===tid);
+            const p=toCvs(e.clientX,e.clientY);
+            let bp='T',bd=Infinity;
+            ['T','B','L','R'].forEach(pt=>{const c=mmPort(tel,pt);const d=Math.hypot(c.x-p.x,c.y-p.y);if(d<bd){bd=d;bp=pt;}});
+            setLns(prev=>[...prev,{id:Date.now().toString(),from:act.fid,fromPort:act.fp,to:tid,toPort:bp,style:lnSty}]);
+          }
+          setTool('SELECT');
+        }
+        setAct({type:'NONE'});
+      };
+
+      const quickLine=(e,sid,port)=>{
+        e.stopPropagation();
+        const p=toCvs(e.clientX,e.clientY);
+        setAct({type:'LINE',fid:sid,fp:port,ex:p.x,ey:p.y});
+      };
+
+      const addFromCtx=(type)=>{
+        if(!ctxMenu)return;
+        const p={x:(ctxMenu.x-cam.x)/cam.z,y:(ctxMenu.y-cam.y)/cam.z};
+        const nid=Date.now().toString();
+        let ne={id:nid,type,x:p.x-75,y:p.y-40,text:'',fontSize:16,fontWeight:'normal',textAlign:'center'};
+        if(type==='RECT'||type==='CIRCLE')ne={...ne,w:150,h:80,bg:'#ffffff',border:'#000000'};
+        else if(type==='STICKY')ne={...ne,w:150,h:150,bg:'#fef08a',border:'transparent',y:p.y-75};
+        else if(type==='TEXT')ne={...ne,w:200,h:50,bg:'transparent',border:'transparent',text:'Novo Texto',x:p.x-100,y:p.y-25};
+        setEls(prev=>[...prev,ne]);setCtxMenu(null);setSelId(nid);setEditId(nid);setTool('SELECT');
+      };
+
+      const updSty=(id,sty)=>setEls(prev=>prev.map(el=>el.id===id?{...el,...sty}:el));
+      const updTxt=(id,txt)=>setEls(prev=>prev.map(el=>el.id===id?{...el,text:txt}:el));
+      const del=()=>{if(selId){setEls(prev=>prev.filter(el=>el.id!==selId));setLns(prev=>prev.filter(l=>l.from!==selId&&l.to!==selId));setSelId(null);}};
+
+      useEffect(()=>{
+        const h=(e)=>{if((e.key==='Delete'||e.key==='Backspace')&&selId&&!editId)del();};
+        window.addEventListener('keydown',h);
+        return()=>window.removeEventListener('keydown',h);
+      },[selId,editId]);
+
+      const selEl=els.find(el=>el.id===selId);
+      const aid=`mma_${storageKey.replace(/\W/g,'_')}`;
+      const did=`mmd_${storageKey.replace(/\W/g,'_')}`;
+
+      return (
+        <div ref={rootRef} className="relative overflow-hidden bg-[#f4f5f7] select-none" style={{height}} onContextMenu={onCtxMenu}>
+
+          {/* CANVAS */}
+          <div ref={ctnRef} className="absolute inset-0 z-0"
+            onPointerDown={onPtrDown} onPointerMove={onPtrMove} onPointerUp={onPtrUp}
+            style={{
+              backgroundImage:'radial-gradient(#cbd5e1 1px, transparent 1px)',
+              backgroundSize:`${20*cam.z}px ${20*cam.z}px`,
+              backgroundPosition:`${cam.x}px ${cam.y}px`,
+              cursor:act.type==='PAN'?'grabbing':tool==='SELECT'?'default':'crosshair'
+            }}>
+            <div className="absolute origin-top-left" style={{transform:`translate(${cam.x}px,${cam.y}px) scale(${cam.z})`}}>
+
+              {/* SVG Lines */}
+              <svg className="absolute inset-0 overflow-visible pointer-events-none" style={{zIndex:0}}>
+                <defs>
+                  <marker id={aid} markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                    <polygon points="0 0,10 3.5,0 7" fill="#64748b"/>
+                  </marker>
+                  <marker id={did} markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                    <polygon points="0 0,10 3.5,0 7" fill={BRAND}/>
+                  </marker>
+                </defs>
+                {lns.map(ln=>{
+                  const e1=els.find(e=>e.id===ln.from),e2=els.find(e=>e.id===ln.to);
+                  if(!e1||!e2)return null;
+                  const c1=mmPort(e1,ln.fromPort),c2=mmPort(e2,ln.toPort);
+                  return <path key={ln.id} d={mmPath(c1.x,c1.y,ln.fromPort,c2.x,c2.y,ln.toPort,ln.style||'stepped')} fill="none" stroke="#64748b" strokeWidth="2" markerEnd={`url(#${aid})`}/>;
+                })}
+                {act.type==='LINE'&&(()=>{
+                  const src=els.find(e=>e.id===act.fid);if(!src)return null;
+                  const sc=mmPort(src,act.fp||'C');
+                  const dx=act.ex-sc.x,dy=act.ey-sc.y;
+                  const dp=Math.abs(dx)>Math.abs(dy)?(dx>0?'L':'R'):(dy>0?'T':'B');
+                  return <path d={mmPath(sc.x,sc.y,act.fp||'C',act.ex,act.ey,dp,lnSty)} fill="none" stroke={BRAND} strokeWidth="3" strokeDasharray="5,5" markerEnd={`url(#${did})`}/>;
+                })()}
+              </svg>
+
+              {/* Elements */}
+              {els.map(el=>{
+                const isSel=selId===el.id;
+                return (
+                  <div key={el.id} data-mmid={el.id}
+                    onDoubleClick={()=>setEditId(el.id)}
+                    className={`absolute flex items-center justify-center shadow-sm transition-shadow ${isSel?'ring-2 shadow-lg z-10':'hover:ring-1 z-0'}`}
+                    style={{left:el.x,top:el.y,width:el.w,height:el.h,backgroundColor:el.bg,border:`2px solid ${el.border}`,
+                      borderRadius:el.type==='CIRCLE'?'50%':el.type==='STICKY'?'4px':'8px',
+                      boxShadow:el.type==='STICKY'?'2px 4px 8px rgba(0,0,0,.1)':undefined,
+                      '--tw-ring-color':BRAND,cursor:'grab'}}>
+                    {isSel&&!editId&&(<>
+                      <div className="absolute bg-blue-500 border-2 border-white rounded-full cursor-crosshair hover:scale-150 transition-transform"
+                        style={{width:12,height:12,top:-6,left:'50%',transform:'translateX(-50%)',zIndex:20}} onPointerDown={e=>quickLine(e,el.id,'T')}/>
+                      <div className="absolute bg-blue-500 border-2 border-white rounded-full cursor-crosshair hover:scale-150 transition-transform"
+                        style={{width:12,height:12,top:'50%',right:-6,transform:'translateY(-50%)',zIndex:20}} onPointerDown={e=>quickLine(e,el.id,'R')}/>
+                      <div className="absolute bg-blue-500 border-2 border-white rounded-full cursor-crosshair hover:scale-150 transition-transform"
+                        style={{width:12,height:12,bottom:-6,left:'50%',transform:'translateX(-50%)',zIndex:20}} onPointerDown={e=>quickLine(e,el.id,'B')}/>
+                      <div className="absolute bg-blue-500 border-2 border-white rounded-full cursor-crosshair hover:scale-150 transition-transform"
+                        style={{width:12,height:12,top:'50%',left:-6,transform:'translateY(-50%)',zIndex:20}} onPointerDown={e=>quickLine(e,el.id,'L')}/>
+                    </>)}
+                    {editId===el.id?(
+                      <textarea autoFocus className="w-full h-full p-2 bg-transparent border-none outline-none resize-none"
+                        style={{fontSize:`${el.fontSize||16}px`,color:el.bg==='#000000'?'#fff':'#000',textAlign:el.textAlign||'center',fontWeight:el.fontWeight||'normal',fontStyle:el.fontStyle||'normal'}}
+                        value={el.text} onChange={ev=>updTxt(el.id,ev.target.value)} onBlur={()=>setEditId(null)} onPointerDown={ev=>ev.stopPropagation()}/>
+                    ):(
+                      <div className="w-full h-full p-2 flex whitespace-pre-wrap pointer-events-none overflow-hidden"
+                        style={{fontSize:`${el.fontSize||16}px`,color:el.bg==='#000000'?'#fff':'#000',textAlign:el.textAlign||'center',fontWeight:el.fontWeight||'normal',fontStyle:el.fontStyle||'normal',alignItems:'center',
+                          justifyContent:el.textAlign==='left'?'flex-start':el.textAlign==='right'?'flex-end':'center'}}>
+                        {el.text}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* CONTEXT MENU */}
+          {ctxMenu&&(
+            <div className="absolute z-[100] bg-white rounded-xl shadow-xl border border-gray-200 p-2 flex flex-col w-48 mm-ctx"
+              style={{left:ctxMenu.x,top:ctxMenu.y}}>
+              <div className="flex items-center gap-1 text-xs font-bold text-gray-400 uppercase tracking-wider px-2 pt-1 pb-2 border-b border-gray-100">
+                <Plus size={13}/> Adicionar
+              </div>
+              {[['RECT',Square,'Retângulo'],['STICKY',StickyNote,'Post-it'],['CIRCLE',Circle,'Círculo'],['TEXT',Type,'Texto']].map(([t,Ic,lb])=>(
+                <button key={t} onClick={()=>addFromCtx(t)} className="flex items-center gap-3 hover:bg-gray-100 p-2 mt-1 rounded-lg text-sm text-gray-700 font-medium transition-colors">
+                  <Ic size={15}/>{lb}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* TOOLBAR */}
+          <div className="absolute left-3 bg-white rounded-xl shadow-lg border border-gray-200 flex flex-col p-1 gap-0.5 z-50"
+            style={{top:showHeader?60:12}}>
+            {[{id:'SELECT',Ic:MousePointer2,tip:'Selecionar'},{id:'TEXT',Ic:Type,tip:'Texto'},{id:'STICKY',Ic:StickyNote,tip:'Post-it'},{id:'RECT',Ic:Square,tip:'Retângulo'},{id:'CIRCLE',Ic:Circle,tip:'Círculo'}].map(({id,Ic,tip})=>(
+              <button key={id} title={tip} onClick={()=>setTool(id)}
+                className={`p-2.5 rounded-lg transition-all flex items-center justify-center ${tool===id?'text-black shadow-inner':'text-gray-500 hover:bg-gray-100 hover:text-gray-800'}`}
+                style={{backgroundColor:tool===id?BRAND:'transparent'}}>
+                <Ic size={18}/>
+              </button>
+            ))}
+            <div className="w-full h-px bg-gray-100 my-0.5"/>
+            <div className="text-[8px] text-center text-gray-400 font-bold tracking-widest py-0.5">LINHAS</div>
+            {[
+              {v:'straight',tip:'Reta',     svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="20" x2="20" y2="4"/></svg>},
+              {v:'curved',  tip:'Curva',    svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M 4 20 C 12 20,12 4,20 4"/></svg>},
+              {v:'stepped', tip:'Quebrada', svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M 4 20 L 12 20 L 12 4 L 20 4"/></svg>}
+            ].map(({v,tip,svg})=>(
+              <button key={v} title={tip} onClick={()=>setLnSty(v)}
+                className={`p-2 rounded-lg mx-0.5 transition-all ${lnSty===v?'bg-gray-100 text-black':'text-gray-400 hover:bg-gray-50 hover:text-gray-700'}`}>
+                {svg}
+              </button>
+            ))}
+          </div>
+
+          {/* HEADER */}
+          {showHeader&&(
+            <div className="absolute top-0 left-0 right-0 h-14 px-4 flex items-center gap-3 bg-white/90 backdrop-blur-md border-b border-gray-200 z-40 pointer-events-none">
+              <div className="w-7 h-7 rounded-md flex items-center justify-center shadow-sm" style={{backgroundColor:BRAND}}>
+                <Square size={14} fill="black" strokeWidth={0}/>
+              </div>
+              <span className="font-semibold text-gray-800">{initialTitle}</span>
+            </div>
+          )}
+
+          {/* FORMATTING TOOLBAR */}
+          {selEl&&tool==='SELECT'&&(
+            <div className="absolute z-50 bg-white rounded-xl shadow-xl border border-gray-200 p-1.5 flex flex-wrap items-center gap-1.5"
+              style={{left:selEl.x*cam.z+cam.x+(selEl.w*cam.z)/2,top:Math.max(58,selEl.y*cam.z+cam.y-4),transform:'translate(-50%,-100%)'}}
+              onPointerDown={e=>e.stopPropagation()}>
+              <div className="flex items-center gap-0.5 pr-1.5 border-r border-gray-200">
+                {MM_COLORS.map(c=>(
+                  <button key={'bg'+c} title="Fundo" onClick={()=>updSty(selId,{bg:c})}
+                    className={`w-5 h-5 rounded-full border border-gray-300 hover:scale-125 transition-transform flex items-center justify-center ${selEl.bg===c?'ring-2 ring-offset-1 ring-gray-600':''}`}
+                    style={{backgroundColor:c==='transparent'?'#f8f9fa':c}}>
+                    {c==='transparent'&&<span className="text-red-400 text-[10px] leading-none font-bold">╲</span>}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-0.5 pr-1.5 border-r border-gray-200">
+                {MM_BORDER_COLORS.map(c=>(
+                  <button key={'bd'+c} title="Borda" onClick={()=>updSty(selId,{border:c})}
+                    className={`w-5 h-5 rounded border-2 hover:scale-125 transition-transform flex items-center justify-center ${selEl.border===c?'ring-2 ring-offset-1 ring-gray-600':''}`}
+                    style={{backgroundColor:c==='transparent'?'transparent':c,borderColor:c==='transparent'?'#e5e7eb':c}}>
+                    {c==='transparent'&&<span className="text-red-400 text-[10px] leading-none font-bold">╲</span>}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-0.5 pr-1.5 border-r border-gray-200">
+                <button onClick={()=>updSty(selId,{fontSize:Math.max(8,(selEl.fontSize||16)-2)})} className="p-1 hover:bg-gray-100 rounded text-gray-600"><Minus size={12}/></button>
+                <span className="text-xs w-6 text-center tabular-nums">{selEl.fontSize||16}</span>
+                <button onClick={()=>updSty(selId,{fontSize:Math.min(72,(selEl.fontSize||16)+2)})} className="p-1 hover:bg-gray-100 rounded text-gray-600"><Plus size={12}/></button>
+              </div>
+              <div className="flex items-center gap-0.5 pr-1.5 border-r border-gray-200">
+                <button onClick={()=>updSty(selId,{fontWeight:selEl.fontWeight==='bold'?'normal':'bold'})} className={`p-1.5 rounded transition-colors ${selEl.fontWeight==='bold'?'bg-gray-200 text-black':'text-gray-500 hover:bg-gray-100'}`}><Bold size={12}/></button>
+                <button onClick={()=>updSty(selId,{fontStyle:selEl.fontStyle==='italic'?'normal':'italic'})} className={`p-1.5 rounded transition-colors ${selEl.fontStyle==='italic'?'bg-gray-200 text-black':'text-gray-500 hover:bg-gray-100'}`}><Italic size={12}/></button>
+              </div>
+              <div className="flex items-center gap-0.5 pr-1.5 border-r border-gray-200">
+                <button onClick={()=>updSty(selId,{textAlign:'left'})} className={`p-1.5 rounded ${selEl.textAlign==='left'?'bg-gray-200 text-black':'text-gray-500 hover:bg-gray-100'}`}><AlignLeft size={12}/></button>
+                <button onClick={()=>updSty(selId,{textAlign:'center'})} className={`p-1.5 rounded ${selEl.textAlign!=='left'&&selEl.textAlign!=='right'?'bg-gray-200 text-black':'text-gray-500 hover:bg-gray-100'}`}><AlignCenter size={12}/></button>
+                <button onClick={()=>updSty(selId,{textAlign:'right'})} className={`p-1.5 rounded ${selEl.textAlign==='right'?'bg-gray-200 text-black':'text-gray-500 hover:bg-gray-100'}`}><AlignRight size={12}/></button>
+              </div>
+              <button onClick={del} className="px-2 py-1 text-xs text-red-500 hover:bg-red-50 rounded-lg font-semibold transition-colors">Excluir</button>
+            </div>
+          )}
+        </div>
+      );
+    };
+
     /* ---- Traffic & Mídias Tab — routed by activeTab prop ---- */
-    const AdminTrafficTab = ({ primaryColor, activeTab }) => {
+    const AdminTrafficTab = ({ primaryColor, activeTab, accountSeed = 0 }) => {
       const subTab = activeTab || 'overview';
 
       // ── Date range state ──────────────────────────────────────
@@ -1975,8 +2393,18 @@
       const pts      = daysBetween(dateRange.startDate, dateRange.endDate) + 1;
       const rangeKey = `${dateRange.startDate.toISOString().slice(0,10)}_${dateRange.endDate.toISOString().slice(0,10)}`;
 
-      // ── Mock data base (matching standalone HTML) ─────────────
-      const USER_B = { totalSpend:68420, leads:1847, clicks:72300, impressions:3420000, pageViews:294000, metaSpend:42600, googleSpend:25820, totalRevenue:321800 };
+      // ── Mock data base — seeded by connected account ──────────
+      const acctMult = accountSeed > 0 ? (0.45 + (accountSeed % 70) / 70 * 1.4) : 1;
+      const USER_B = {
+        totalSpend:    Math.round(68420  * acctMult),
+        leads:         Math.round(1847   * acctMult),
+        clicks:        Math.round(72300  * acctMult),
+        impressions:   Math.round(3420000 * acctMult),
+        pageViews:     Math.round(294000 * acctMult),
+        metaSpend:     Math.round(42600  * acctMult),
+        googleSpend:   Math.round(25820  * acctMult),
+        totalRevenue:  Math.round(321800 * acctMult),
+      };
       const seededRnd = (seed) => { let s=seed; return ()=>{ s=(s*9301+49297)%233280; return s/233280; }; };
       const eachDay = (start, end) => { const out=[]; let cur=new Date(start); cur.setHours(0,0,0,0); const fin=new Date(end); fin.setHours(23,59,59,999); while(cur<=fin){ out.push(new Date(cur)); cur=new Date(cur); cur.setDate(cur.getDate()+1); } return out; };
       const fmtDt = (d) => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
@@ -2568,119 +2996,15 @@
       };
 
       /* ── Estratégia ── */
-      const EstrategiaContent = () => {
-        const PC = primaryColor || '#c6f432';
-        const SK = 'pixt_est_miromap';
-        const mkN = (id,x,y,text,color,parentId) => ({id,x,y,text,color:color||PC,parentId:parentId||null,width:160,height:48});
-        const initN = () => {
-          const cx=500,cy=260;
-          return [
-            mkN('root',cx,cy,'Estratégia',PC,null),
-            mkN('n1',cx-240,cy-140,'Topo de Funil','#3b82f6','root'),
-            mkN('n2',cx+200,cy-140,'Conversão','#8b5cf6','root'),
-            mkN('n3',cx-240,cy+140,'Aquisição','#f59e0b','root'),
-            mkN('n4',cx+200,cy+140,'Retenção','#10b981','root'),
-            mkN('n11',cx-380,cy-220,'Tráfego Pago','#93c5fd','n1'),
-            mkN('n12',cx-180,cy-240,'Orgânico','#93c5fd','n1'),
-          ];
-        };
-        const NODE_COLORS = [PC,'#6366f1','#22c55e','#f59e0b','#ef4444','#3b82f6','#ec4899','#14b8a6','#8b5cf6','#f97316'];
-        const [nodes, setNodes] = useState(() => { try { const s=localStorage.getItem(SK); return s?JSON.parse(s):initN(); } catch { return initN(); } });
-        const [pan, setPan] = useState({x:0,y:0});
-        const [zoom, setZoom] = useState(1);
-        const [draggingNode, setDraggingNode] = useState(null);
-        const [dragOffset, setDragOffset] = useState({x:0,y:0});
-        const [isPanning, setIsPanning] = useState(false);
-        const [panStart, setPanStart] = useState({x:0,y:0});
-        const [editingNode, setEditingNode] = useState(null);
-        const [editText, setEditText] = useState('');
-        const [selectedNode, setSelectedNode] = useState(null);
-        const [colorPickNode, setColorPickNode] = useState(null);
-        const svgRef2 = useRef(null);
-        const saveN = n => { try { localStorage.setItem(SK,JSON.stringify(n)); } catch {} };
-        const getEdges2 = ns => ns.filter(n=>n.parentId).map(n=>{
-          const p=ns.find(p2=>p2.id===n.parentId); if(!p) return null;
-          return {id:`${p.id}-${n.id}`,x1:p.x,y1:p.y,x2:n.x,y2:n.y,color:n.color};
-        }).filter(Boolean);
-        const svgC = e => { const r=svgRef2.current?.getBoundingClientRect(); if(!r) return {x:0,y:0}; return {x:(e.clientX-r.left-pan.x)/zoom, y:(e.clientY-r.top-pan.y)/zoom}; };
-        const onNMD = (e,node) => { e.stopPropagation(); if(e.button!==0) return; const c=svgC(e); setDraggingNode(node.id); setDragOffset({x:c.x-node.x,y:c.y-node.y}); setSelectedNode(node.id); setColorPickNode(null); };
-        const onSMD = e => { if(e.button===0&&!draggingNode){setIsPanning(true);setPanStart({x:e.clientX-pan.x,y:e.clientY-pan.y});setSelectedNode(null);setColorPickNode(null);} };
-        const onMM = e => {
-          if(draggingNode){ const c=svgC(e); setNodes(ns=>ns.map(n=>n.id===draggingNode?{...n,x:c.x-dragOffset.x,y:c.y-dragOffset.y}:n)); }
-          else if(isPanning){ setPan({x:e.clientX-panStart.x,y:e.clientY-panStart.y}); }
-        };
-        const onMU = () => { if(draggingNode){ setNodes(ns=>{saveN(ns);return ns;}); } setDraggingNode(null); setIsPanning(false); };
-        const onWh = e => { e.preventDefault(); const d=e.deltaY<0?1.1:0.9; setZoom(z=>Math.min(3,Math.max(0.2,z*d))); };
-        const addChild2 = pid => { const p=nodes.find(n=>n.id===pid); if(!p)return; const ang=Math.random()*Math.PI*2,r=220,id='n'+Date.now(); const col=NODE_COLORS.filter(c=>c!==p.color)[Math.floor(Math.random()*9)]; const next=[...nodes,mkN(id,p.x+Math.cos(ang)*r,p.y+Math.sin(ang)*r,'Novo nó',col,pid)]; setNodes(next);saveN(next);setSelectedNode(id);setEditingNode(id);setEditText('Novo nó'); };
-        const delNode2 = id => { if(id==='root')return; const toRm=new Set([id]); let ch=true; while(ch){ch=false;nodes.forEach(n=>{if(n.parentId&&toRm.has(n.parentId)&&!toRm.has(n.id)){toRm.add(n.id);ch=true;}});}; const next=nodes.filter(n=>!toRm.has(n.id)); setNodes(next);saveN(next);setSelectedNode(null); };
-        const startEdit2 = node => { setEditingNode(node.id); setEditText(node.text); setColorPickNode(null); };
-        const commitEdit2 = () => { if(!editingNode)return; const next=nodes.map(n=>n.id===editingNode?{...n,text:editText||n.text}:n); setNodes(next);saveN(next);setEditingNode(null); };
-        const changeColor2 = (id,color) => { const next=nodes.map(n=>n.id===id?{...n,color}:n); setNodes(next);saveN(next);setColorPickNode(null); };
-        const edges2 = getEdges2(nodes);
-        return (
-          <div className="flex flex-col" style={{height:'480px'}}>
-            <div className="flex items-center justify-between mb-2 shrink-0 flex-wrap gap-2">
-              <p className="text-xs font-semibold text-gray-400">Duplo clique = editar · Arraste = mover · Scroll = zoom · Arraste fundo = pan</p>
-              <div className="flex gap-1.5">
-                <button onClick={()=>setZoom(z=>Math.min(3,z*1.2))} className="w-7 h-7 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-600" title="Zoom in"><ZoomIn size={13}/></button>
-                <button onClick={()=>setZoom(z=>Math.max(0.2,z*0.8))} className="w-7 h-7 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-600" title="Zoom out"><ZoomOut size={13}/></button>
-                <button onClick={()=>{setPan({x:0,y:0});setZoom(1);}} className="w-7 h-7 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-600" title="Reset view"><Maximize2 size={13}/></button>
-                <span className="text-[10px] text-gray-400 font-bold self-center w-8 text-center">{Math.round(zoom*100)}%</span>
-                <button onClick={()=>{const n=initN();setNodes(n);saveN(n);setPan({x:0,y:0});setZoom(1);}} className="px-2 py-1 rounded-lg border border-red-100 bg-red-50 text-red-400 text-[10px] font-bold hover:bg-red-100">Reset</button>
-                <button onClick={()=>{saveN(nodes);}} className="px-3 py-1.5 rounded-lg font-bold text-black text-xs flex items-center gap-1" style={{backgroundColor:PC}}><Save size={11}/> Salvar</button>
-              </div>
-            </div>
-            <div className="flex-1 relative rounded-2xl border border-gray-200 bg-[#f8f9fb] overflow-hidden shadow-inner"
-              style={{cursor:isPanning?'grabbing':'grab'}}
-              ref={svgRef2}
-              onMouseDown={onSMD} onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU} onWheel={onWh}>
-              <svg width="100%" height="100%" className="absolute inset-0 pointer-events-none" style={{zIndex:0}}>
-                <defs><pattern id="estDots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.8" fill="#d1d5db"/></pattern></defs>
-                <rect width="100%" height="100%" fill="url(#estDots)"/>
-              </svg>
-              <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%" style={{zIndex:1}}>
-                <g transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}>
-                  {edges2.map(e=><line key={e.id} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke={e.color} strokeWidth={2/zoom} strokeOpacity={0.45} strokeDasharray={`${6/zoom},${3/zoom}`}/>)}
-                </g>
-              </svg>
-              <div className="absolute inset-0" style={{zIndex:2}}>
-                {nodes.map(node=>{
-                  const nx=node.x*zoom+pan.x,ny=node.y*zoom+pan.y,w=node.width*zoom,h=node.height*zoom;
-                  const isSel=selectedNode===node.id,isEdit=editingNode===node.id,isRoot=node.id==='root';
-                  const fs=Math.max(9,12*zoom);
-                  return (
-                    <div key={node.id} style={{position:'absolute',left:nx-w/2,top:ny-h/2,width:w,height:h,userSelect:'none',zIndex:isSel?10:3}}>
-                      <div onMouseDown={e=>onNMD(e,node)} onDoubleClick={()=>startEdit2(node)}
-                        className="w-full h-full rounded-xl flex items-center justify-center shadow-md transition-all relative"
-                        style={{backgroundColor:node.color,border:isSel?`${2/zoom}px solid #1f2937`:`${1.5/zoom}px solid rgba(0,0,0,0.12)`,cursor:draggingNode===node.id?'grabbing':'grab',transform:isSel?'scale(1.06)':'scale(1)'}}>
-                        {isEdit?(
-                          <input autoFocus value={editText} onChange={e=>setEditText(e.target.value)} onBlur={commitEdit2} onKeyDown={e=>{if(e.key==='Enter')commitEdit2();if(e.key==='Escape')setEditingNode(null);}} onClick={e=>e.stopPropagation()}
-                            className="w-full text-center font-bold outline-none bg-transparent px-1" style={{fontSize:fs,color:isRoot||node.color===PC?'#111':'#fff'}}/>
-                        ):(
-                          <span className="font-bold px-2 text-center leading-tight overflow-hidden" style={{fontSize:fs,color:isRoot||node.color===PC?'#111':'#fff',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden',maxWidth:'100%'}}>{node.text}</span>
-                        )}
-                      </div>
-                      {isSel&&!isEdit&&(
-                        <div className="absolute flex gap-0.5" style={{top:-24*zoom,left:'50%',transform:'translateX(-50%)',zIndex:20}}>
-                          <button onClick={e=>{e.stopPropagation();addChild2(node.id);}} className="rounded-full bg-white border border-gray-300 shadow text-gray-700 hover:bg-gray-50 flex items-center justify-center" style={{width:20*zoom,height:20*zoom}} title="Adicionar filho"><Plus size={10*zoom}/></button>
-                          <button onClick={e=>{e.stopPropagation();startEdit2(node);}} className="rounded-full bg-white border border-gray-300 shadow text-blue-600 hover:bg-blue-50 flex items-center justify-center" style={{width:20*zoom,height:20*zoom}} title="Editar"><Edit3 size={9*zoom}/></button>
-                          <button onClick={e=>{e.stopPropagation();setColorPickNode(node.id);}} className="rounded-full shadow border border-gray-300 flex items-center justify-center hover:scale-110" style={{width:20*zoom,height:20*zoom,backgroundColor:node.color}} title="Cor"/>
-                          {!isRoot&&<button onClick={e=>{e.stopPropagation();delNode2(node.id);}} className="rounded-full bg-white border border-red-200 shadow text-red-500 hover:bg-red-50 flex items-center justify-center" style={{width:20*zoom,height:20*zoom}} title="Excluir"><Trash2 size={9*zoom}/></button>}
-                        </div>
-                      )}
-                      {colorPickNode===node.id&&(
-                        <div className="absolute bg-white rounded-2xl shadow-2xl border border-gray-200 p-2 flex flex-wrap gap-1" style={{top:'100%',left:'50%',transform:'translateX(-50%)',marginTop:6,zIndex:30,width:140}} onClick={e=>e.stopPropagation()}>
-                          {NODE_COLORS.map(c=><button key={c} onClick={()=>changeColor2(node.id,c)} className="w-5 h-5 rounded-full border-2 hover:scale-110 transition-all" style={{backgroundColor:c,borderColor:node.color===c?'#111':'transparent'}}/>)}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        );
-      };
+      const EstrategiaContent = () => (
+        <MindMapCanvas
+          storageKey="pixt_est_miromap_v2"
+          primaryColor={primaryColor}
+          initialTitle="Estratégia de Tráfego"
+          height="calc(100vh - 220px)"
+          showHeader={true}
+        />
+      );
 
       /* ── Páginas ── */
       const PaginasContent = () => {
@@ -3718,6 +4042,7 @@
 
               {currentAgent.slug === 'leadflow' && (
                 <>
+                  <NavI icon={<KanbanSquare size={18} />} label="Pipeline de Vendas" isActive={activeTab === 'pipeline'} onClick={() => setActiveTab('pipeline')} />
                   <NavI icon={<Users size={18} />} label="Gestão CRM" isActive={activeTab === 'crm'} onClick={() => setActiveTab('crm')} />
                   <NavI icon={<Inbox size={18} />} label="Conversas (Intenções)" isActive={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} />
                 </>
@@ -3725,6 +4050,7 @@
 
               {currentAgent.slug === 'booker' && (
                 <>
+                  <NavI icon={<KanbanSquare size={18} />} label="Pipeline de Vendas" isActive={activeTab === 'pipeline'} onClick={() => setActiveTab('pipeline')} />
                   <NavI icon={<Calendar size={18} />} label="Agenda & Meetings" isActive={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} />
                   <NavI icon={<Inbox size={18} />} label="Conversas (Intenções)" isActive={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} />
                 </>
@@ -3826,8 +4152,157 @@
     /* =========================================================
        CLIENT TRAFFIC TAB — versão autônoma para o dashboard do cliente
        ========================================================= */
+    /* =========================================================
+       PLATFORM CONNECTION SYSTEM
+       ========================================================= */
+    const usePlatformConnections = () => {
+      const KEY = 'pixt_platform_connections_v2';
+      const MOCK_ACCOUNTS = {
+        meta: [
+          { id:'act_28394756', name:'Conta Principal',    budget:'R$ 120k/mês' },
+          { id:'act_17485632', name:'Conta Retargeting',  budget:'R$ 32k/mês'  },
+          { id:'act_93627481', name:'Conta Teste A/B',    budget:'R$ 8k/mês'   },
+        ],
+        gads: [
+          { id:'284-736-9012', name:'Search Principal',    budget:'R$ 85k/mês' },
+          { id:'563-841-2037', name:'Display & YouTube',   budget:'R$ 24k/mês' },
+        ],
+        ga4: [
+          { id:'G-2KX94P1WT', name:'Propriedade Principal', budget:'Ilimitado' },
+          { id:'G-8M7NR3QZX', name:'App Mobile',            budget:'Ilimitado' },
+        ],
+      };
+      const [conns, setConns] = useState(() => { try { return JSON.parse(localStorage.getItem(KEY)||'{}'); } catch { return {}; } });
+      const save = next => { setConns(next); localStorage.setItem(KEY, JSON.stringify(next)); };
+      const connect = platform => {
+        const accounts = MOCK_ACCOUNTS[platform]||[];
+        save({ ...conns, [platform]:{ connected:true, accounts, selectedAccountId:accounts[0]?.id } });
+      };
+      const disconnect = platform => { const next={...conns}; delete next[platform]; save(next); };
+      const selectAccount = (platform, id) => { if(!conns[platform]) return; save({...conns,[platform]:{...conns[platform],selectedAccountId:id}}); };
+      const isConnected = p => !!conns[p]?.connected;
+      const getSelectedAccount = p => conns[p]?.selectedAccountId||null;
+      const getAccounts = p => conns[p]?.accounts||[];
+      const getSeed = p => { const id=getSelectedAccount(p)||''; let h=0; for(let i=0;i<id.length;i++) h=((h<<5)-h)+id.charCodeAt(i); return Math.abs(h)%100; };
+      return { isConnected, getSelectedAccount, getAccounts, connect, disconnect, selectAccount, getSeed };
+    };
+
+    const ConnectPlatformModal = ({ platform, title, icon: Icon, color, onConfirm, onClose }) => {
+      const [step, setStep] = useState('form');
+      const PERMS = {
+        meta:['Ler dados de campanhas e conjuntos','Acessar métricas de desempenho','Visualizar contas de anúncios','Ler dados de públicos'],
+        gads:['Acessar campanhas do Google Ads','Ler relatórios de conversão','Visualizar métricas de desempenho','Acessar dados de orçamento'],
+        ga4: ['Ler dados de sessões e eventos','Acessar relatórios de usuários','Visualizar funis de conversão','Ler dados de retenção'],
+      };
+      const perms = PERMS[platform]||[];
+      const handleConnect = () => {
+        setStep('loading');
+        setTimeout(()=>{ setStep('done'); setTimeout(()=>{ onConfirm(); onClose(); },800); },1800);
+      };
+      return createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 overflow-hidden" onClick={e=>e.stopPropagation()}>
+            {step==='loading'?(
+              <div className="p-12 flex flex-col items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl flex items-center justify-center animate-pulse" style={{backgroundColor:color+'20'}}><Icon size={32} style={{color}}/></div>
+                <p className="font-bold text-gray-900 text-lg">Conectando ao {title}…</p>
+                <Loader2 size={24} className="animate-spin" style={{color}}/>
+                <p className="text-xs text-gray-400 text-center">Verificando credenciais e permissões</p>
+              </div>
+            ):step==='done'?(
+              <div className="p-12 flex flex-col items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-emerald-100"><CheckCircle2 size={32} className="text-emerald-500"/></div>
+                <p className="font-bold text-gray-900 text-lg">Conectado com sucesso!</p>
+                <p className="text-xs text-gray-400">Carregando suas contas de anúncios…</p>
+              </div>
+            ):(
+              <>
+                <div className="p-6 border-b border-gray-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{backgroundColor:color+'18'}}><Icon size={22} style={{color}}/></div>
+                    <div>
+                      <p className="font-black text-gray-900">Conectar {title}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">Autorize o acesso às suas métricas</p>
+                    </div>
+                    <button onClick={onClose} className="ml-auto p-2 rounded-xl hover:bg-gray-100 text-gray-400 transition"><X size={16}/></button>
+                  </div>
+                </div>
+                <div className="p-6">
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Permissões solicitadas</p>
+                  <ul className="space-y-2 mb-6">
+                    {perms.map((p,i)=>(
+                      <li key={i} className="flex items-center gap-2.5 text-sm text-gray-600">
+                        <div className="w-4 h-4 rounded-full flex items-center justify-center shrink-0" style={{backgroundColor:color+'20'}}><CheckCircle2 size={10} style={{color}}/></div>
+                        {p}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[10px] text-gray-400 mb-4 leading-relaxed">Seus dados são exibidos apenas no painel. Nunca criamos, editamos ou excluímos campanhas.</p>
+                  <div className="flex gap-2">
+                    <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 hover:bg-gray-50 transition">Cancelar</button>
+                    <button onClick={handleConnect} className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition hover:opacity-90" style={{backgroundColor:color,color:'#fff'}}>
+                      <Link size={14}/> Autorizar Acesso
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>,
+        document.body
+      );
+    };
+
+    const PlatformConnectionBanner = ({ platform, icon: Icon, color, title, isConnected, accounts, selectedId, onConnect, onDisconnect, onSelect }) => {
+      if (!isConnected) return (
+        <div className="flex items-center justify-between bg-gradient-to-r from-gray-50 to-white border border-gray-200 rounded-2xl p-4 mb-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{backgroundColor:color+'18',border:`1.5px solid ${color}35`}}><Icon size={20} style={{color}}/></div>
+            <div>
+              <p className="font-bold text-gray-900 text-sm">{title}</p>
+              <p className="text-xs text-gray-400 mt-0.5">Conecte sua conta para ver métricas reais desta plataforma</p>
+            </div>
+          </div>
+          <button onClick={onConnect}
+            className="px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition hover:opacity-90 shadow-sm"
+            style={{backgroundColor:color, color:'#fff'}}>
+            <Link size={14}/> Conectar
+          </button>
+        </div>
+      );
+      return (
+        <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center bg-emerald-100"><Icon size={20} className="text-emerald-600"/></div>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <p className="font-bold text-gray-900 text-sm">{title}</p>
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full"><CheckCircle2 size={9}/> Conectado</span>
+              </div>
+              <select value={selectedId||''} onChange={e=>onSelect(e.target.value)}
+                className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 font-semibold outline-none focus:border-gray-400 shadow-sm">
+                {accounts.map(a=><option key={a.id} value={a.id}>{a.name} ({a.id}) — {a.budget}</option>)}
+              </select>
+            </div>
+          </div>
+          <button onClick={onDisconnect}
+            className="px-3 py-2 rounded-xl border border-red-200 bg-white text-red-500 text-xs font-bold flex items-center gap-1.5 hover:bg-red-50 transition shadow-sm">
+            <Unlink size={12}/> Desconectar
+          </button>
+        </div>
+      );
+    };
+
     const ClientTrafficTab = ({ primaryColor }) => {
       const [subTab, setSubTab] = useState('overview');
+      const [showModal, setShowModal] = useState(null);
+      const { isConnected, getSelectedAccount, getAccounts, connect, disconnect, selectAccount, getSeed } = usePlatformConnections();
+
+      const PLATFORMS = {
+        meta: { title:'Meta Ads',           icon:Target,   color:'#1877F2' },
+        gads: { title:'Google Ads',         icon:Globe,    color:'#4285F4' },
+        ga4:  { title:'Google Analytics 4', icon:Activity, color:'#E37400' },
+      };
       const CLIENT_TRAFFIC_SUBS = [
         {id:'overview',   label:'Visão Geral',  icon:LayoutDashboard},
         {id:'meta',       label:'Meta Ads',     icon:Target},
@@ -3837,21 +4312,53 @@
         {id:'criativos',  label:'Criativos',    icon:Star},
         {id:'estrategia', label:'Estratégia',   icon:MapPin},
       ];
+      const PLAT_TABS = { meta:'meta', gads:'gads', ga4:'ga4' };
+      const currentPlat = PLAT_TABS[subTab]||null;
+
       return (
         <div className="space-y-4 animate-in fade-in duration-300">
+          {showModal && PLATFORMS[showModal] && (
+            <ConnectPlatformModal
+              platform={showModal}
+              title={PLATFORMS[showModal].title}
+              icon={PLATFORMS[showModal].icon}
+              color={PLATFORMS[showModal].color}
+              onConfirm={()=>connect(showModal)}
+              onClose={()=>setShowModal(null)}
+            />
+          )}
           <div className="flex gap-1 flex-wrap bg-white border border-gray-200 rounded-2xl p-1.5 shadow-sm">
-            {CLIENT_TRAFFIC_SUBS.map(t => {
-              const Icon = t.icon;
+            {CLIENT_TRAFFIC_SUBS.map(t=>{
+              const Icon=t.icon, plat=PLAT_TABS[t.id], conn=plat?isConnected(plat):false;
               return (
-                <button key={t.id} onClick={() => setSubTab(t.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${subTab===t.id?'text-black shadow-sm':'text-gray-500 hover:text-gray-800'}`}
+                <button key={t.id} onClick={()=>setSubTab(t.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all relative ${subTab===t.id?'text-black shadow-sm':'text-gray-500 hover:text-gray-800'}`}
                   style={subTab===t.id?{backgroundColor:primaryColor}:{}}>
                   <Icon size={12}/> {t.label}
+                  {plat&&conn&&<span className="w-1.5 h-1.5 rounded-full bg-emerald-500 absolute -top-0.5 -right-0.5"/>}
                 </button>
               );
             })}
           </div>
-          <AdminTrafficTab primaryColor={primaryColor} activeTab={subTab} />
+          {currentPlat && PLATFORMS[currentPlat] && (
+            <PlatformConnectionBanner
+              platform={currentPlat}
+              icon={PLATFORMS[currentPlat].icon}
+              color={PLATFORMS[currentPlat].color}
+              title={PLATFORMS[currentPlat].title}
+              isConnected={isConnected(currentPlat)}
+              accounts={getAccounts(currentPlat)}
+              selectedId={getSelectedAccount(currentPlat)}
+              onConnect={()=>setShowModal(currentPlat)}
+              onDisconnect={()=>disconnect(currentPlat)}
+              onSelect={id=>selectAccount(currentPlat,id)}
+            />
+          )}
+          <AdminTrafficTab
+            primaryColor={primaryColor}
+            activeTab={subTab}
+            accountSeed={currentPlat ? getSeed(currentPlat) : 0}
+          />
         </div>
       );
     };
@@ -3869,6 +4376,24 @@
       const [pickStartC, setPickStartC] = useState(null);
       const [pickEndC, setPickEndC] = useState(null);
       const toast = useToast();
+
+      const [kpiOverrides, setKpiOverrides] = useState(() => {
+        try { return JSON.parse(localStorage.getItem(`pixt_kpi_agent_${agent.slug}`) || '{}'); } catch { return {}; }
+      });
+      const [editKPIItem, setEditKPIItem] = useState(null);
+      const periodKey = dateRange.label;
+      const saveKPIOverride = (key, val) => {
+        const upd = { ...kpiOverrides, [key]: val };
+        setKpiOverrides(upd);
+        localStorage.setItem(`pixt_kpi_agent_${agent.slug}`, JSON.stringify(upd));
+        setEditKPIItem(null);
+      };
+      const clearKPIOverride = (key) => {
+        const upd = { ...kpiOverrides }; delete upd[key];
+        setKpiOverrides(upd);
+        localStorage.setItem(`pixt_kpi_agent_${agent.slug}`, JSON.stringify(upd));
+        setEditKPIItem(null);
+      };
 
       const applyPresetC = (preset) => {
         const labels = { '7d':'Últimos 7 dias', '14d':'Últimos 14 dias', '30d':'Últimos 30 dias', '90d':'Últimos 90 dias' };
@@ -3915,14 +4440,46 @@
       const fmtC = v => `R$ ${Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0})}`;
       const fmtP = v => `${Number(v||0).toFixed(1)}%`;
 
-      const kpis = [
-        { title:'Interações',        val:stats.cards.interactions||0,                     prev:(stats.cards.interactions||0)*0.88,   fmt:'n', icon:MessageSquare, color:'#3b82f6' },
-        { title:'Conversas Ativas',  val:stats.cards.conversations||0,                   prev:(stats.cards.conversations||0)*0.84,  fmt:'n', icon:Activity,      color:'#8b5cf6' },
-        { title:'Em Atendimento',    val:stats.cards.activeLeads||0,                     prev:(stats.cards.activeLeads||0)*0.91,    fmt:'n', icon:Users,         color:'#10b981' },
-        { title:'Eventos',           val:stats.cards.events||0,                          prev:(stats.cards.events||0)*0.87,         fmt:'n', icon:Calendar,      color:'#f59e0b' },
-        { title:'Taxa de Conversão', val:parseFloat(stats.extras.conversionRate)||0,     prev:parseFloat(stats.extras.conversionRate)*0.9||0, fmt:'p', icon:TrendingUp, color:'#c6f432', hl:true },
-        { title:'Ticket Médio',      val:parseFloat(String(stats.extras.avgTicket).replace(/[^0-9.]/g,''))||0, prev:parseFloat(String(stats.extras.avgTicket).replace(/[^0-9.]/g,''))*0.91||0, fmt:'c', icon:DollarSign, color:'#ec4899', hl:true },
-      ];
+      const _interactions = stats.cards.interactions||0;
+      const _conversations = stats.cards.conversations||0;
+      const _activeLeads   = stats.cards.activeLeads||0;
+      const _events        = stats.cards.events||0;
+      const _conversion    = parseFloat(stats.extras.conversionRate)||0;
+      const _ticket        = parseFloat(String(stats.extras.avgTicket).replace(/[^0-9.]/g,''))||0;
+      const kpis = (() => {
+        if (agent.slug === 'leadflow') return [
+          { title:'Leads Captados',       val:_activeLeads,   prev:_activeLeads*0.85,   fmt:'n', icon:UserPlus,      color:'#3b82f6' },
+          { title:'Follow-ups Feitos',    val:_interactions,  prev:_interactions*0.88,  fmt:'n', icon:Send,          color:'#8b5cf6' },
+          { title:'Em Qualificação',      val:_conversations, prev:_conversations*0.84, fmt:'n', icon:Activity,      color:'#10b981' },
+          { title:'Eventos de CRM',       val:_events,        prev:_events*0.87,        fmt:'n', icon:Calendar,      color:'#f59e0b' },
+          { title:'Taxa de Qualificação', val:_conversion,    prev:_conversion*0.9,     fmt:'p', icon:TrendingUp,    color:'#c6f432', hl:true },
+          { title:'Ticket Médio',         val:_ticket,        prev:_ticket*0.91,        fmt:'c', icon:DollarSign,    color:'#ec4899', hl:true },
+        ];
+        if (agent.slug === 'booker') return [
+          { title:'Reuniões Agendadas',   val:_events,        prev:_events*0.85,        fmt:'n', icon:Calendar,      color:'#3b82f6' },
+          { title:'Confirmações',         val:_conversations, prev:_conversations*0.87, fmt:'n', icon:CheckCircle2,  color:'#10b981' },
+          { title:'Contatos Ativos',      val:_activeLeads,   prev:_activeLeads*0.91,   fmt:'n', icon:Users,         color:'#8b5cf6' },
+          { title:'Interações Totais',    val:_interactions,  prev:_interactions*0.88,  fmt:'n', icon:Activity,      color:'#f59e0b' },
+          { title:'Taxa de Confirmação',  val:_conversion,    prev:_conversion*0.9,     fmt:'p', icon:TrendingUp,    color:'#c6f432', hl:true },
+          { title:'Receita Gerada',       val:_ticket,        prev:_ticket*0.91,        fmt:'c', icon:DollarSign,    color:'#ec4899', hl:true },
+        ];
+        if (agent.slug === 'pixt-bdr') return [
+          { title:'Leads Extraídos',      val:_activeLeads,   prev:_activeLeads*0.82,   fmt:'n', icon:MapPin,        color:'#3b82f6' },
+          { title:'Mensagens Enviadas',   val:_interactions,  prev:_interactions*0.88,  fmt:'n', icon:Send,          color:'#8b5cf6' },
+          { title:'Respostas Recebidas',  val:_conversations, prev:_conversations*0.84, fmt:'n', icon:MessageSquare, color:'#10b981' },
+          { title:'Prospecções Ativas',   val:_events,        prev:_events*0.87,        fmt:'n', icon:Target,        color:'#f59e0b' },
+          { title:'Taxa de Resposta',     val:_conversion,    prev:_conversion*0.9,     fmt:'p', icon:TrendingUp,    color:'#c6f432', hl:true },
+          { title:'Custo por Lead',       val:_ticket,        prev:_ticket*0.91,        fmt:'c', icon:DollarSign,    color:'#ec4899', hl:true },
+        ];
+        return [
+          { title:'Interações',           val:_interactions,  prev:_interactions*0.88,  fmt:'n', icon:MessageSquare, color:'#3b82f6' },
+          { title:'Conversas Ativas',     val:_conversations, prev:_conversations*0.84, fmt:'n', icon:Activity,      color:'#8b5cf6' },
+          { title:'Em Atendimento',       val:_activeLeads,   prev:_activeLeads*0.91,   fmt:'n', icon:Users,         color:'#10b981' },
+          { title:'Eventos',              val:_events,        prev:_events*0.87,        fmt:'n', icon:Calendar,      color:'#f59e0b' },
+          { title:'Taxa de Conversão',    val:_conversion,    prev:_conversion*0.9,     fmt:'p', icon:TrendingUp,    color:'#c6f432', hl:true },
+          { title:'Ticket Médio',         val:_ticket,        prev:_ticket*0.91,        fmt:'c', icon:DollarSign,    color:'#ec4899', hl:true },
+        ];
+      })();
 
       const DAY_LABELS = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
       const buildWeekC = (base, seed) => {
@@ -4006,13 +4563,22 @@
 
           {tab==='resumo' && (
             <>
-              <DraggableKPIGrid storageKey={`client-overview-${agent.slug}`} items={kpis} cols="grid-cols-2 lg:grid-cols-3" renderItem={(k,idx)=>{
-                const change = k.prev&&k.prev!==0 ? ((k.val-k.prev)/Math.abs(k.prev))*100 : 0;
+              <DraggableKPIGrid storageKey={`client-overview-${agent.slug}`} items={kpis} cols="grid-cols-2 lg:grid-cols-3" renderItem={(k)=>{
+                const oKey = `${periodKey}__${k.title}`;
+                const ov = kpiOverrides[oKey];
+                const displayVal = ov !== undefined ? Number(ov) : k.val;
+                const change = k.prev&&k.prev!==0 ? ((displayVal-k.prev)/Math.abs(k.prev))*100 : 0;
                 const isUp   = change>0;
                 const neutral = Math.abs(change)<0.05;
-                const fmted  = k.fmt==='c' ? fmtC(k.val) : k.fmt==='p' ? fmtP(k.val) : fmtN(k.val);
+                const fmted  = k.fmt==='c' ? fmtC(displayVal) : k.fmt==='p' ? fmtP(displayVal) : fmtN(displayVal);
                 return (
-                  <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="relative bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow group">
+                    {ov!==undefined&&<div className="absolute top-2 left-2 w-2 h-2 rounded-full bg-amber-400" title="Valor manual"/>}
+                    <button onClick={e=>{e.stopPropagation();setEditKPIItem(k);}}
+                      className="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-all z-10"
+                      title="Configurar valor manualmente">
+                      <Edit3 size={11}/>
+                    </button>
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{backgroundColor:k.color}}>
                         <k.icon size={14} className="text-white"/>
@@ -4034,12 +4600,32 @@
                 <h3 className="text-sm font-bold text-gray-700 mb-0.5">Comparativo — Semana Atual vs. Semana Anterior</h3>
                 <p className="text-xs text-gray-400 mb-4">Segunda a domingo · linha sólida = semana atual · linha tracejada = semana anterior</p>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {[
-                    { label:'Conversas Ativas', data:weekConvs,  color:'#8b5cf6', fmtr:fmtN },
-                    { label:'Leads Ativos',     data:weekLeadsC, color:primaryColor, fmtr:fmtN },
-                    { label:'Eventos',          data:weekEvents,  color:'#f59e0b', fmtr:fmtN },
-                    { label:'Interações',       data:weekInter,   color:'#3b82f6', fmtr:fmtN },
-                  ].map(({label,data,color,fmtr})=>(
+                  {(()=>{
+                    if(agent.slug==='leadflow') return [
+                      { label:'Leads Captados',    data:weekLeadsC, color:primaryColor,  fmtr:fmtN },
+                      { label:'Follow-ups Feitos', data:weekInter,  color:'#3b82f6',     fmtr:fmtN },
+                      { label:'Em Qualificação',   data:weekConvs,  color:'#8b5cf6',     fmtr:fmtN },
+                      { label:'Eventos de CRM',    data:weekEvents, color:'#f59e0b',     fmtr:fmtN },
+                    ];
+                    if(agent.slug==='booker') return [
+                      { label:'Reuniões Agendadas',data:weekEvents, color:'#3b82f6',     fmtr:fmtN },
+                      { label:'Confirmações',      data:weekConvs,  color:'#10b981',     fmtr:fmtN },
+                      { label:'Contatos Ativos',   data:weekLeadsC, color:primaryColor,  fmtr:fmtN },
+                      { label:'Interações',        data:weekInter,  color:'#f59e0b',     fmtr:fmtN },
+                    ];
+                    if(agent.slug==='pixt-bdr') return [
+                      { label:'Leads Extraídos',   data:weekLeadsC, color:'#3b82f6',     fmtr:fmtN },
+                      { label:'Msgs Enviadas',     data:weekInter,  color:'#8b5cf6',     fmtr:fmtN },
+                      { label:'Respostas',         data:weekConvs,  color:'#10b981',     fmtr:fmtN },
+                      { label:'Prospecções Ativas',data:weekEvents, color:'#f59e0b',     fmtr:fmtN },
+                    ];
+                    return [
+                      { label:'Conversas Ativas',  data:weekConvs,  color:'#8b5cf6',     fmtr:fmtN },
+                      { label:'Leads Ativos',      data:weekLeadsC, color:primaryColor,  fmtr:fmtN },
+                      { label:'Eventos',           data:weekEvents, color:'#f59e0b',     fmtr:fmtN },
+                      { label:'Interações',        data:weekInter,  color:'#3b82f6',     fmtr:fmtN },
+                    ];
+                  })().map(({label,data,color,fmtr})=>(
                     <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">{label}</p>
                       <WeekChart data={data} label={label} color={color} formatter={fmtr}/>
@@ -4051,23 +4637,49 @@
           )}
           {tab==='diario' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <p className="text-sm font-bold text-gray-900 mb-3">Conversas por Dia</p>
-                <DailyBar data={dConvs} color="#8b5cf6" label="Conversas" formatter={fmtN}/>
-              </div>
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <p className="text-sm font-bold text-gray-900 mb-3">Leads Ativos por Dia</p>
-                <DailyLine data={dLeadsC} color={primaryColor} label="Leads" formatter={fmtN}/>
-              </div>
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <p className="text-sm font-bold text-gray-900 mb-3">Eventos por Dia</p>
-                <DailyBar data={dEvents} color="#f59e0b" label="Eventos" formatter={fmtN}/>
-              </div>
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <p className="text-sm font-bold text-gray-900 mb-3">Interações por Dia</p>
-                <DailyLine data={dInter} color="#3b82f6" label="Interações" formatter={fmtN}/>
-              </div>
+              {(()=>{
+                if(agent.slug==='leadflow') return [
+                  { label:'Leads Captados por Dia',    data:dLeadsC, color:primaryColor, Cmp:DailyLine },
+                  { label:'Follow-ups Feitos por Dia', data:dInter,  color:'#3b82f6',    Cmp:DailyBar  },
+                  { label:'Em Qualificação por Dia',   data:dConvs,  color:'#8b5cf6',    Cmp:DailyLine },
+                  { label:'Eventos de CRM por Dia',    data:dEvents, color:'#f59e0b',    Cmp:DailyBar  },
+                ];
+                if(agent.slug==='booker') return [
+                  { label:'Reuniões Agendadas por Dia',data:dEvents, color:'#3b82f6',    Cmp:DailyBar  },
+                  { label:'Confirmações por Dia',      data:dConvs,  color:'#10b981',    Cmp:DailyLine },
+                  { label:'Contatos Ativos por Dia',   data:dLeadsC, color:primaryColor, Cmp:DailyLine },
+                  { label:'Interações por Dia',        data:dInter,  color:'#f59e0b',    Cmp:DailyBar  },
+                ];
+                if(agent.slug==='pixt-bdr') return [
+                  { label:'Leads Extraídos por Dia',   data:dLeadsC, color:'#3b82f6',    Cmp:DailyLine },
+                  { label:'Mensagens Enviadas por Dia',data:dInter,  color:'#8b5cf6',    Cmp:DailyBar  },
+                  { label:'Respostas por Dia',         data:dConvs,  color:'#10b981',    Cmp:DailyLine },
+                  { label:'Prospecções Ativas por Dia',data:dEvents, color:'#f59e0b',    Cmp:DailyBar  },
+                ];
+                return [
+                  { label:'Conversas por Dia',         data:dConvs,  color:'#8b5cf6',    Cmp:DailyBar  },
+                  { label:'Leads Ativos por Dia',      data:dLeadsC, color:primaryColor, Cmp:DailyLine },
+                  { label:'Eventos por Dia',           data:dEvents, color:'#f59e0b',    Cmp:DailyBar  },
+                  { label:'Interações por Dia',        data:dInter,  color:'#3b82f6',    Cmp:DailyLine },
+                ];
+              })().map(({label,data,color,Cmp})=>(
+                <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                  <p className="text-sm font-bold text-gray-900 mb-3">{label}</p>
+                  <Cmp data={data} color={color} label={label} formatter={fmtN}/>
+                </div>
+              ))}
             </div>
+          )}
+          {editKPIItem && (
+            <KPIManualModal
+              kpi={editKPIItem}
+              period={periodKey}
+              overrides={kpiOverrides}
+              onSave={val => saveKPIOverride(`${periodKey}__${editKPIItem.title}`, val)}
+              onClear={() => clearKPIOverride(`${periodKey}__${editKPIItem.title}`)}
+              onClose={() => setEditKPIItem(null)}
+              primaryColor={primaryColor}
+            />
           )}
         </div>
       );
@@ -7128,8 +7740,14 @@
     ];
     const PICKER_COLORS = ['#6366f1','#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f59e0b','#ef4444','#22c55e','#f97316','#64748b'];
 
-    const getTaskPriority = (id) => TASK_PRIORITIES.find(p => p.id === id) || TASK_PRIORITIES[2];
-    const getTaskStage    = (id) => TASK_STAGES.find(s => s.id === id) || TASK_STAGES[0];
+    const getTaskPriority = (id) => {
+      try { const s = localStorage.getItem('pixt_task_priorities'); if (s) { const ps = JSON.parse(s); const f = ps.find(p=>p.id===id); if(f) return f; } } catch {}
+      return TASK_PRIORITIES.find(p => p.id === id) || TASK_PRIORITIES[2];
+    };
+    const getTaskStage = (id) => {
+      try { const s = localStorage.getItem('pixt_task_stages'); if (s) { const ss = JSON.parse(s); const f = ss.find(s=>s.id===id); if(f) return f; } } catch {}
+      return TASK_STAGES.find(s => s.id === id) || TASK_STAGES[0];
+    };
 
     const deadlineBadge = (due_date) => {
       if (!due_date) return null;
@@ -7162,7 +7780,7 @@
     );
 
     /* TaskCard — card individual do Kanban */
-    const TaskCard = ({ task, tags, executors, isLast, onDelete, onAdvance, onDetail, dragTask, setDragTask, primaryColor }) => {
+    const TaskCard = ({ task, tags, executors, isLast, isExecutor, onDelete, onAdvance, onExecutorComplete, onDetail, dragTask, setDragTask, primaryColor }) => {
       const prio     = getTaskPriority(task.priority);
       const dl       = deadlineBadge(task.due_date);
       const est      = fmtMins(task.estimated_minutes);
@@ -7170,19 +7788,21 @@
       const exec     = executors ? executors.find(e => e.name === task.executor_name) : null;
       return (
         <div
-          draggable
-          onDragStart={() => setDragTask(task.id)}
-          onDragEnd={() => setDragTask(null)}
+          draggable={!isExecutor}
+          onDragStart={isExecutor ? undefined : () => setDragTask(task.id)}
+          onDragEnd={isExecutor ? undefined : () => setDragTask(null)}
           onClick={() => onDetail(task)}
-          className={`bg-white border border-gray-100 rounded-xl shadow-sm cursor-grab active:cursor-grabbing group hover:border-gray-300 hover:shadow-md transition-all overflow-hidden ${dragTask === task.id ? 'opacity-30' : ''}`}>
+          className={`bg-white border border-gray-100 rounded-xl shadow-sm ${isExecutor ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'} group hover:border-gray-300 hover:shadow-md transition-all overflow-hidden ${dragTask === task.id ? 'opacity-30' : ''}`}>
           <div className="h-1" style={{ backgroundColor: prio.bar }}></div>
           <div className="p-3">
             <div className="flex items-center justify-between mb-1.5">
               <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${prio.badge}`}>{prio.label}</span>
-              <button onClick={e => { e.stopPropagation(); onDelete(task.id); }}
-                className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all">
-                <X size={11} />
-              </button>
+              {!isExecutor && (
+                <button onClick={e => { e.stopPropagation(); onDelete(task.id); }}
+                  className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all">
+                  <X size={11} />
+                </button>
+              )}
             </div>
             <p className="font-bold text-sm text-gray-900 leading-tight mb-1.5 line-clamp-2">{task.title}</p>
             {task.client_name && (
@@ -7216,7 +7836,13 @@
                 ))}
                 {taskTags.length > 3 && <span className="text-[9px] text-gray-400">+{taskTags.length - 3}</span>}
               </div>
-              {!isLast ? (
+              {isExecutor ? (
+                <button onClick={e => { e.stopPropagation(); onExecutorComplete(task); }}
+                  className="text-[9px] font-bold px-2 py-1 rounded-lg text-black transition-all flex items-center gap-0.5 hover:opacity-80"
+                  style={{ backgroundColor: primaryColor }}>
+                  <CheckCircle2 size={9}/> Concluir
+                </button>
+              ) : !isLast ? (
                 <button onClick={e => { e.stopPropagation(); onAdvance(task); }}
                   className="text-[9px] font-bold px-2 py-1 rounded-lg bg-gray-900 text-white hover:bg-gray-700 transition-all flex items-center gap-0.5">
                   <ArrowRight size={9} /> Avançar
@@ -7233,47 +7859,59 @@
     };
 
     /* KanbanView — flat/seamless (estilo pipeline de vendas) */
-    const KanbanView = ({ tasks, stages, tags, executors, dragTask, setDragTask, isOver, setIsOver, onDrop, onDelete, onAdvance, onDetail, primaryColor }) => (
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex-1" style={{ minHeight: 0 }}>
-        {/* Stage headers */}
-        <div className="flex border-b border-gray-100 shrink-0" style={{ minWidth: stages.length * 240 }}>
-          {stages.map(stage => {
-            const col = tasks.filter(t => t.current_stage === stage.id);
-            const headerBg = stage.color || '#6b7280';
-            return (
-              <div key={stage.id} className="flex-none border-r border-black/5 last:border-r-0"
-                style={{ width: 240, backgroundColor: headerBg }}>
-                <div className="flex items-center justify-between px-3 py-3">
-                  <h3 className="font-bold text-white text-sm">{stage.label}</h3>
-                  <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-white/25 text-white">{col.length}</span>
+    const KanbanView = ({ tasks, stages, tags, executors, dragTask, setDragTask, isOver, setIsOver, onDrop, onDelete, onAdvance, onExecutorComplete, onDetail, primaryColor, isExecutor }) => (
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex-1 overflow-hidden" style={{ minHeight: 0 }}>
+        {/* Single scroll wrapper — keeps headers + cards in sync horizontally */}
+        <div style={{ overflowX: 'auto', height: '100%', display: 'flex', flexDirection: 'column' }}>
+          {/* Stage headers */}
+          <div className="flex border-b border-gray-100 shrink-0" style={{ minWidth: stages.length * 264 }}>
+            {stages.map(stage => {
+              const col = tasks.filter(t => t.current_stage === stage.id);
+              return (
+                <div key={stage.id} className="flex-none border-r border-black/5"
+                  style={{ width: 264, backgroundColor: stage.color || '#6b7280' }}>
+                  <div className="flex items-center justify-between px-3 py-3">
+                    <h3 className="font-bold text-white text-sm">{stage.label}</h3>
+                    <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-white/25 text-white">{col.length}</span>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-        {/* Cards area — white continuous */}
-        <div className="flex overflow-x-auto overflow-y-auto" style={{ minWidth: stages.length * 240, minHeight: 400, maxHeight: 'calc(100vh - 340px)' }}>
-          {stages.map((stage, idx) => {
-            const col = tasks.filter(t => t.current_stage === stage.id);
-            return (
-              <div key={stage.id}
-                onDragOver={e => { e.preventDefault(); setIsOver(stage.id); }}
-                onDragLeave={() => setIsOver(null)}
-                onDrop={e => { e.preventDefault(); if (dragTask) onDrop(dragTask, stage.id); setIsOver(null); setDragTask(null); }}
-                className={`flex-none border-r border-gray-100 last:border-r-0 p-2.5 space-y-2 transition-colors ${isOver === stage.id ? 'bg-gray-50' : 'bg-white'}`}
-                style={{ width: 240, minHeight: 400 }}>
-                {col.map(task => (
-                  <TaskCard key={task.id} task={task} tags={tags} executors={executors}
-                    isLast={idx === stages.length - 1}
-                    onDelete={onDelete} onAdvance={onAdvance} onDetail={onDetail}
-                    dragTask={dragTask} setDragTask={setDragTask} primaryColor={primaryColor} />
-                ))}
-                {col.length === 0 && (
-                  <div className="text-center py-8 text-[11px] text-gray-300 font-medium">Sem tarefas</div>
-                )}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+          {/* Cards area — only vertical scroll here */}
+          <div className="flex flex-1 overflow-y-auto" style={{ minWidth: stages.length * 264, minHeight: 300 }}>
+            {stages.map((stage, idx) => {
+              const col = tasks.filter(t => t.current_stage === stage.id);
+              return (
+                <div key={stage.id}
+                  onDragOver={e => { e.preventDefault(); setIsOver(stage.id); }}
+                  onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setIsOver(null); }}
+                  onDrop={e => { e.preventDefault(); if (dragTask) onDrop(dragTask, stage.id); setIsOver(null); setDragTask(null); }}
+                  className="flex-none border-r border-gray-100 p-2.5 space-y-2 transition-all duration-200"
+                  style={{ width: 264, minHeight: 300,
+                    backgroundColor: isOver === stage.id ? stage.color + '15' : 'white',
+                    boxShadow: isOver === stage.id ? `inset 0 0 0 2px ${stage.color}` : 'none',
+                    borderRadius: isOver === stage.id ? '12px' : undefined }}>
+                  {isOver === stage.id && (
+                    <div className="flex items-center justify-center gap-1.5 py-3 rounded-xl border-2 border-dashed transition-all"
+                      style={{ borderColor: stage.color, color: stage.color }}>
+                      <ArrowRight size={13}/>
+                      <span className="text-xs font-black">Soltar aqui</span>
+                    </div>
+                  )}
+                  {col.map(task => (
+                    <TaskCard key={task.id} task={task} tags={tags} executors={executors}
+                      isLast={false} isExecutor={isExecutor}
+                      onDelete={onDelete} onAdvance={onAdvance} onExecutorComplete={onExecutorComplete} onDetail={onDetail}
+                      dragTask={dragTask} setDragTask={setDragTask} primaryColor={primaryColor} />
+                  ))}
+                  {col.length === 0 && isOver !== stage.id && (
+                    <div className="text-center py-8 text-[11px] text-gray-300 font-medium">Sem tarefas</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     );
@@ -7438,11 +8076,71 @@
       );
     };
 
+    /* Modal: Executor Concluir/Passar tarefa */
+    const ExecutorCompleteModal = ({ task, executors, onConfirm, onClose, primaryColor }) => {
+      const trail = (() => { try { return JSON.parse(localStorage.getItem(`pixt_task_trail_${task.id}`) || '[]'); } catch { return []; } })();
+      const curIdx = trail.findIndex(s => s.executor === task.executor_name);
+      const nextTrailStep = trail[curIdx + 1] || null;
+      const [nextExecutor, setNextExecutor] = useState(nextTrailStep ? nextTrailStep.executor : '');
+      const [passForward, setPassForward] = useState(!!nextTrailStep);
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: primaryColor }}>
+                <CheckCircle2 size={18} className="text-black"/>
+              </div>
+              <div>
+                <h3 className="font-black text-gray-900">Tarefa Concluída!</h3>
+                <p className="text-xs text-gray-400 truncate max-w-[200px]">{task.title}</p>
+              </div>
+              <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-700"><X size={18}/></button>
+            </div>
+            {nextTrailStep && (
+              <div className="mb-4 p-3 bg-indigo-50 border border-indigo-100 rounded-xl">
+                <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider mb-1">Próximo na trilha</p>
+                <p className="font-bold text-sm text-indigo-900">{nextTrailStep.executor}</p>
+                {nextTrailStep.role && <p className="text-xs text-indigo-500">{nextTrailStep.role}</p>}
+              </div>
+            )}
+            <div className="mb-4">
+              <label className="flex items-center gap-2 mb-3 cursor-pointer">
+                <input type="checkbox" checked={passForward} onChange={e => setPassForward(e.target.checked)} className="rounded"/>
+                <span className="text-sm font-bold text-gray-700">Passar para outro executor</span>
+              </label>
+              {passForward && (
+                executors && executors.length > 0 ? (
+                  <select value={nextExecutor} onChange={e => setNextExecutor(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none bg-white focus:border-indigo-400">
+                    <option value="">Selecionar executor...</option>
+                    {executors.map(ex => <option key={ex.id} value={ex.name}>{ex.name}{ex.role ? ` — ${ex.role}` : ''}</option>)}
+                  </select>
+                ) : (
+                  <input value={nextExecutor} onChange={e => setNextExecutor(e.target.value)}
+                    placeholder="Nome do próximo executor..."
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-400"/>
+                )
+              )}
+            </div>
+            <div className="flex gap-3">
+              <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-bold hover:bg-gray-50">Cancelar</button>
+              <button onClick={() => onConfirm(passForward ? nextExecutor : null)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-black hover:opacity-90"
+                style={{ backgroundColor: primaryColor }}>
+                {passForward ? 'Concluir & Passar →' : 'Finalizar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     /* Modal: Avançar Etapa (Workflow Engine) */
-    const AdvanceStageModal = ({ task, onConfirm, onClose, primaryColor }) => {
+    const AdvanceStageModal = ({ task, executors, onConfirm, onClose, primaryColor }) => {
       const curStage  = getTaskStage(task.current_stage);
-      const curIdx    = TASK_STAGES.findIndex(s => s.id === task.current_stage);
-      const nextStage = TASK_STAGES[curIdx + 1];
+      const liveStages = (() => { try { const s = localStorage.getItem('pixt_task_stages'); return s ? JSON.parse(s) : TASK_STAGES; } catch { return TASK_STAGES; } })();
+      const curIdx    = liveStages.findIndex(s => s.id === task.current_stage);
+      const nextStage = liveStages[curIdx + 1];
       const [executor, setExecutor] = useState('');
       if (!nextStage) return null;
       return (
@@ -7489,6 +8187,48 @@
                 style={{ backgroundColor: primaryColor }}>Avançar →</button>
             </div>
           </div>
+        </div>
+      );
+    };
+
+    /* ── TrailBuilder — sequência de executores para a tarefa ── */
+    const TrailBuilder = ({ executors, value, onChange }) => {
+      const addStep = () => onChange([...value, { executor: '', role: '' }]);
+      const updStep = (i, patch) => onChange(value.map((s, idx) => idx === i ? { ...s, ...patch } : s));
+      const delStep = (i) => onChange(value.filter((_, idx) => idx !== i));
+      const moveStep = (i, dir) => {
+        const nd = [...value]; const ni = i + dir;
+        if (ni < 0 || ni >= nd.length) return;
+        [nd[i], nd[ni]] = [nd[ni], nd[i]]; onChange(nd);
+      };
+      return (
+        <div className="border border-gray-200 rounded-xl overflow-hidden">
+          {value.length === 0 && (
+            <p className="text-xs text-gray-400 italic p-3">Sem trilha definida. A tarefa ficará com o executor inicial.</p>
+          )}
+          {value.map((step, i) => (
+            <div key={i} className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 last:border-b-0 bg-gray-50/50">
+              <span className="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0 bg-gray-200 text-gray-600">{i + 1}</span>
+              {executors && executors.length > 0 ? (
+                <select value={step.executor} onChange={e => updStep(i, { executor: e.target.value, role: executors.find(ex => ex.name === e.target.value)?.role || step.role })}
+                  className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-blue-400">
+                  <option value="">Selecionar executor...</option>
+                  {executors.map(ex => <option key={ex.id} value={ex.name}>{ex.name}{ex.role ? ` (${ex.role})` : ''}</option>)}
+                </select>
+              ) : (
+                <input value={step.executor} onChange={e => updStep(i, { executor: e.target.value })}
+                  placeholder="Nome do executor..."
+                  className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-blue-400"/>
+              )}
+              <button onClick={() => moveStep(i, -1)} disabled={i === 0} className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 text-xs">↑</button>
+              <button onClick={() => moveStep(i, 1)} disabled={i === value.length - 1} className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 text-xs">↓</button>
+              <button onClick={() => delStep(i)} className="text-red-400 hover:text-red-600"><X size={13}/></button>
+            </div>
+          ))}
+          <button onClick={addStep}
+            className="flex items-center gap-1.5 w-full text-xs font-bold text-gray-500 hover:text-gray-700 px-3 py-2.5 hover:bg-gray-50 transition-all border-t border-gray-100">
+            <Plus size={12}/> Adicionar passo na trilha
+          </button>
         </div>
       );
     };
@@ -7610,6 +8350,14 @@
                   </div>
                 </div>
               )}
+              {/* Trilha de Executores */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 block flex items-center gap-1.5">
+                  <span>Trilha de Executores</span>
+                  <span className="text-[10px] font-normal text-gray-400 normal-case">(opcional) — define quem recebe a tarefa em sequência</span>
+                </label>
+                <TrailBuilder executors={executors} value={form.workflow_trail || []} onChange={v => setFormField('workflow_trail', v)} />
+              </div>
             </div>
             <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100">
               <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-bold hover:bg-gray-50 transition-all">Cancelar</button>
@@ -7663,15 +8411,15 @@
       };
 
       /* ── Mover para etapa no Kanban ── */
-      const [movingStage, setMovingStage] = useState(false);
-      const [stageDraft, setStageDraft] = useState(task.current_stage);
-      const moveToStage = async () => {
-        if (stageDraft === task.current_stage) { setMovingStage(false); return; }
+      const [showStagePicker, setShowStagePicker] = useState(false);
+      const allStages = (() => { try { const s = localStorage.getItem('pixt_task_stages'); return s ? JSON.parse(s) : TASK_STAGES; } catch { return TASK_STAGES; } })();
+      const moveToStage = async (stageId) => {
+        if (stageId === task.current_stage) { setShowStagePicker(false); return; }
         try {
-          const { task: updated } = await api(`/tasks/${task.id}`, { method: 'PATCH', body: JSON.stringify({ current_stage: stageDraft }) });
+          const { task: updated } = await api(`/tasks/${task.id}`, { method: 'PATCH', body: JSON.stringify({ current_stage: stageId }) });
           setTask(updated);
           if (onTaskUpdate) onTaskUpdate(updated);
-          setMovingStage(false);
+          setShowStagePicker(false);
         } catch (e) { alert(e.message); }
       };
 
@@ -7711,8 +8459,6 @@
         } finally { setSendingComment(false); }
       };
 
-      const stageColor = getTaskStage(task.current_stage);
-
       return (
         <>
           <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]" onClick={onClose}/>
@@ -7724,12 +8470,19 @@
               <div className="flex-1 mr-3">
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <span className={`text-[10px] font-black px-2 py-0.5 rounded ${prio.badge}`}>{prio.label}</span>
-                  <button onClick={()=>{setStageDraft(task.current_stage);setMovingStage(true);}}
-                    className="text-[10px] font-bold px-2 py-0.5 rounded-md hover:opacity-80 transition-opacity cursor-pointer"
-                    style={{ backgroundColor: stageColor.color + '22', color: stageColor.color }}
-                    title="Clique para mover de etapa">
-                    {stageColor.label} ✎
-                  </button>
+                  {!isExecutorUser ? (
+                    <button onClick={()=>setShowStagePicker(v=>!v)}
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-md hover:opacity-80 transition-opacity cursor-pointer"
+                      style={{ backgroundColor: stage.color + '22', color: stage.color }}
+                      title="Clique para mover de etapa">
+                      {stage.label} ✎
+                    </button>
+                  ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md"
+                      style={{ backgroundColor: stage.color + '22', color: stage.color }}>
+                      {stage.label}
+                    </span>
+                  )}
                   {dl && <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${dl.cls}`}>{dl.label}</span>}
                 </div>
                 <h2 className="text-lg font-black text-gray-900 leading-tight">{task.title}</h2>
@@ -7737,18 +8490,20 @@
               <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-xl shrink-0 transition-colors"><X size={18}/></button>
             </div>
 
-            {/* Modal mover para etapa */}
-            {movingStage && (
-              <div className="px-5 py-3 border-b border-indigo-100 bg-indigo-50 shrink-0">
-                <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider mb-2">Mover para etapa do Kanban</p>
-                <div className="flex gap-2 items-center flex-wrap">
-                  <select value={stageDraft} onChange={e=>setStageDraft(e.target.value)}
-                    className="flex-1 border border-indigo-200 rounded-lg px-2 py-1.5 text-sm outline-none bg-white">
-                    {TASK_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                  </select>
-                  <button onClick={moveToStage} className="px-3 py-1.5 rounded-lg text-xs font-bold text-black"
-                    style={{ backgroundColor: primaryColor }}>Mover</button>
-                  <button onClick={()=>setMovingStage(false)} className="px-3 py-1.5 rounded-lg text-xs font-bold border border-gray-200 text-gray-500">Cancelar</button>
+            {/* Stage picker — click a pill to move instantly */}
+            {showStagePicker && !isExecutorUser && (
+              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 shrink-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider shrink-0">Mover para:</span>
+                  {allStages.map(s => (
+                    <button key={s.id} onClick={() => moveToStage(s.id)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-all hover:scale-105 shrink-0 flex items-center gap-1"
+                      style={{ backgroundColor: s.color, opacity: s.id === task.current_stage ? 0.5 : 1, outline: s.id === task.current_stage ? '2px solid #c6f432' : 'none' }}>
+                      {s.id === task.current_stage && <CheckCircle2 size={10}/>}
+                      {s.label}
+                    </button>
+                  ))}
+                  <button onClick={() => setShowStagePicker(false)} className="px-2 py-1 rounded-lg text-xs text-gray-400 border border-gray-200 hover:bg-white ml-auto">✕</button>
                 </div>
               </div>
             )}
@@ -7855,6 +8610,33 @@
                 </div>
               )}
 
+              {/* Trilha de executores */}
+              {(() => {
+                const trail = (() => { try { return JSON.parse(localStorage.getItem(`pixt_task_trail_${task.id}`) || '[]'); } catch { return []; } })();
+                if (!isExecutorUser && trail.length === 0) return null;
+                if (trail.length === 0) return null;
+                const curIdx = trail.findIndex(s => s.executor === task.executor_name);
+                return (
+                  <div>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <ArrowRight size={11}/> Trilha de Executores
+                    </p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {trail.map((step, i) => (
+                        <React.Fragment key={i}>
+                          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all ${i === curIdx ? 'bg-gray-900 text-white' : i < curIdx ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                            {i < curIdx && <CheckCircle2 size={10}/>}
+                            {i === curIdx && <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse inline-block"/>}
+                            <span>{step.executor}</span>
+                          </div>
+                          {i < trail.length - 1 && <ArrowRight size={11} className="text-gray-300 shrink-0"/>}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Histórico de etapas */}
               {history.length > 0 && (
                 <div>
@@ -7959,7 +8741,10 @@
         } catch (e) { toast(e.message, 'error'); }
       };
 
-      const openModal = () => { setForm({ name: '', role: '', color_hex: '#6366f1', photo_url: null }); setShowModal(true); };
+      const [editingEx, setEditingEx] = useState(null); // executor being edited
+
+      const openModal = () => { setForm({ name: '', role: '', color_hex: '#6366f1', photo_url: null }); setEditingEx(null); setShowModal(true); };
+      const openEditEx = (ex) => { setForm({ name: ex.name, role: ex.role||'', color_hex: ex.color_hex||'#6366f1', photo_url: ex.photo_url||null }); setEditingEx(ex); setShowModal(true); };
 
       const pickPhoto = async (e) => {
         const file = e.target.files[0];
@@ -7975,9 +8760,15 @@
         if (!form.name.trim()) return toast('Nome obrigatório', 'error');
         setSaving(true);
         try {
-          await api('/task-executors', { method: 'POST', body: JSON.stringify(form) });
-          toast('Executor criado', 'success');
+          if (editingEx) {
+            await api(`/task-executors/${editingEx.id}`, { method: 'PUT', body: JSON.stringify(form) });
+            toast('Executor atualizado', 'success');
+          } else {
+            await api('/task-executors', { method: 'POST', body: JSON.stringify(form) });
+            toast('Executor criado', 'success');
+          }
           setShowModal(false);
+          setEditingEx(null);
           onRefresh();
         } catch (e) { toast(e.message, 'error'); } finally { setSaving(false); }
       };
@@ -8020,10 +8811,16 @@
                   const active = execTaskCount(ex.name);
                   return (
                     <div key={ex.id} className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-gray-300 transition-all group relative">
-                      <button onClick={() => deleteExecutor(ex.id)} disabled={deleting === ex.id}
-                        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all p-1 rounded-lg hover:bg-red-50">
-                        <Trash2 size={13} />
-                      </button>
+                      <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        <button onClick={() => openEditEx(ex)}
+                          className="text-gray-300 hover:text-blue-500 p-1 rounded-lg hover:bg-blue-50 transition-all">
+                          <Edit3 size={13} />
+                        </button>
+                        <button onClick={() => deleteExecutor(ex.id)} disabled={deleting === ex.id}
+                          className="text-gray-300 hover:text-red-500 p-1 rounded-lg hover:bg-red-50 transition-all">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                       <div className="w-14 h-14 rounded-2xl mb-3 mx-auto overflow-hidden flex items-center justify-center"
                         style={ex.photo_url ? {} : { backgroundColor: ex.color_hex }}>
                         {ex.photo_url
@@ -8097,8 +8894,8 @@
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowModal(false)}>
               <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-5">
-                  <h3 className="text-base font-black text-gray-900">Novo Executor</h3>
-                  <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-700 p-1 rounded-lg hover:bg-gray-100"><X size={16} /></button>
+                  <h3 className="text-base font-black text-gray-900">{editingEx ? 'Editar Executor' : 'Novo Executor'}</h3>
+                  <button onClick={() => { setShowModal(false); setEditingEx(null); }} className="text-gray-400 hover:text-gray-700 p-1 rounded-lg hover:bg-gray-100"><X size={16} /></button>
                 </div>
                 <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickPhoto} />
                 <div className="space-y-4">
@@ -8157,7 +8954,7 @@
     };
 
     /* ── ConfigView ── */
-    const ConfigView = ({ tags, onRefresh, primaryColor }) => {
+    const ConfigView = ({ tags, onRefresh, primaryColor, taskStages, onEditStages, taskPriorities, onEditPriorities }) => {
       const toast = useToast();
       const [newTag, setNewTag]     = useState({ name: '', color_hex: '#6366f1' });
       const [saving, setSaving]     = useState(false);
@@ -8211,24 +9008,46 @@
             </div>
           </div>
           <div className="bg-white/80 border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="p-5 border-b border-gray-100"><h3 className="font-black text-gray-900">Etapas do Kanban</h3></div>
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="font-black text-gray-900">Etapas do Kanban</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Configure as etapas, cores e ordem do fluxo</p>
+              </div>
+              {onEditStages && (
+                <button onClick={onEditStages}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all">
+                  <Edit3 size={12}/> Editar
+                </button>
+              )}
+            </div>
             <div className="p-5">
               <div className="flex items-center gap-2 flex-wrap">
-                {TASK_STAGES.map((s, i) => (
+                {(taskStages||TASK_STAGES).map((s, i, arr) => (
                   <React.Fragment key={s.id}>
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold text-white" style={{ backgroundColor: s.color }}>
                       <div className="w-1.5 h-1.5 rounded-full bg-white/60"></div>{s.label}
                     </div>
-                    {i < TASK_STAGES.length - 1 && <ArrowRight size={13} className="text-gray-300" />}
+                    {i < arr.length - 1 && <ArrowRight size={13} className="text-gray-300" />}
                   </React.Fragment>
                 ))}
               </div>
             </div>
           </div>
           <div className="bg-white/80 border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="p-5 border-b border-gray-100"><h3 className="font-black text-gray-900">Níveis de Prioridade</h3></div>
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="font-black text-gray-900">Níveis de Prioridade</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Personalize os rótulos e cores de cada nível</p>
+              </div>
+              {onEditPriorities && (
+                <button onClick={onEditPriorities}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all">
+                  <Edit3 size={12}/> Editar
+                </button>
+              )}
+            </div>
             <div className="p-5 flex flex-wrap gap-2">
-              {TASK_PRIORITIES.map(p => (
+              {(taskPriorities||TASK_PRIORITIES).map(p => (
                 <div key={p.id} className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold text-white" style={{ backgroundColor: p.bar }}>{p.label}</div>
               ))}
             </div>
@@ -8505,6 +9324,45 @@
       );
     };
 
+    /* ── ConfigTaskPrioritiesModal ── */
+    const ConfigTaskPrioritiesModal = ({ priorities, onSave, onClose, primaryColor }) => {
+      const [draft, setDraft] = useState(priorities.map(p=>({...p})));
+      const updP = (id, patch) => setDraft(d => d.map(p => p.id===id?{...p,...patch}:p));
+      const BADGE_MAP = {
+        '#ef4444':'bg-red-100 text-red-700','#f97316':'bg-orange-100 text-orange-700',
+        '#f59e0b':'bg-yellow-100 text-yellow-700','#3b82f6':'bg-blue-100 text-blue-700',
+        '#9ca3af':'bg-gray-100 text-gray-500','#22c55e':'bg-green-100 text-green-700',
+        '#8b5cf6':'bg-violet-100 text-violet-700','#ec4899':'bg-pink-100 text-pink-700',
+        '#14b8a6':'bg-teal-100 text-teal-700','#6366f1':'bg-indigo-100 text-indigo-700',
+      };
+      const setColor = (id, c) => updP(id, {bar:c, badge:BADGE_MAP[c]||'bg-gray-100 text-gray-700'});
+      return (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+          <div className="bg-white rounded-2xl p-5 w-full max-w-lg shadow-2xl" onClick={e=>e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <p className="font-black text-gray-900">Configurar Níveis de Prioridade</p>
+              <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={14} className="text-gray-400"/></button>
+            </div>
+            <div className="space-y-2 max-h-80 overflow-y-auto mb-4">
+              {draft.map((p) => (
+                <div key={p.id} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+                  <div className="w-3 h-3 rounded-full shrink-0" style={{backgroundColor:p.bar}}/>
+                  <input value={p.label} onChange={e=>updP(p.id,{label:e.target.value})}
+                    className="flex-1 text-sm font-bold bg-transparent outline-none min-w-0"/>
+                  <TColorPicker value={p.bar} onChange={c=>setColor(p.id,c)}/>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mb-4">Edite o nome e a cor de cada nível. A ordem e IDs são mantidos.</p>
+            <div className="flex gap-2">
+              <button onClick={onClose} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500">Cancelar</button>
+              <button onClick={()=>{onSave(draft);onClose();}} className="flex-1 py-2 rounded-xl font-bold text-sm text-black" style={{backgroundColor:primaryColor}}>Salvar</button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     /* ── TasksTab — componente principal ── */
     const TasksTab = ({ primaryColor, isExecutor }) => {
       const toast = useToast();
@@ -8521,6 +9379,7 @@
       const [filters, setFilters] = useState({ client: '', executor: '', squad_id: '', stage: '', priority: '' });
       const [showCreate, setShowCreate] = useState(false);
       const [advanceTask, setAdvanceTask] = useState(null);
+      const [executorCompleteTask, setExecutorCompleteTask] = useState(null);
       const [detailTask, setDetailTask] = useState(null);
       const [editingCell, setEditingCell] = useState(null);
       const [groupBy, setGroupBy] = useState('client_name');
@@ -8530,6 +9389,12 @@
       });
       const saveTaskStages = (ns) => { setTaskStages(ns); localStorage.setItem('pixt_task_stages', JSON.stringify(ns)); };
       const [showStageConfig, setShowStageConfig] = useState(false);
+
+      const [taskPriorities, setTaskPriorities] = useState(() => {
+        try { const s = localStorage.getItem('pixt_task_priorities'); return s ? JSON.parse(s) : TASK_PRIORITIES; } catch { return TASK_PRIORITIES; }
+      });
+      const saveTaskPriorities = (np) => { setTaskPriorities(np); localStorage.setItem('pixt_task_priorities', JSON.stringify(np)); };
+      const [showPriorityConfig, setShowPriorityConfig] = useState(false);
 
       /* ── Filtro de período ── */
       const [taskDateFrom, setTaskDateFrom] = useState(null);
@@ -8563,7 +9428,7 @@
       };
       const clearCalT = () => { setTaskDateFrom(null); setTaskDateTo(null); setCalPickA(null); setCalPickB(null); setShowTaskCal(false); };
 
-      const defForm = { title: '', description: '', client_name: '', squad_id: '', priority: 'media', current_stage: 'briefing', executor_name: '', estimated_minutes: 60, due_date: '', tag_ids: [] };
+      const defForm = { title: '', description: '', client_name: '', squad_id: '', priority: 'media', current_stage: 'briefing', executor_name: '', estimated_minutes: 60, due_date: '', tag_ids: [], workflow_trail: [] };
       const [form, setForm] = useState(defForm);
       const setFF = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -8606,12 +9471,21 @@
 
       const hasFilters = Object.values(filters).some(Boolean) || !!taskDateFrom;
 
+      const isExecutorLogin = isExecutor;
+      const executorName = auth.user?.name || (auth.user?.email || '').split('@')[0] || '';
+      const myTasks = isExecutorLogin && executorName
+        ? filtered.filter(t => t.executor_name === executorName)
+        : filtered;
+
       const createTask = async () => {
         if (!form.title.trim())   return toast('Título obrigatório', 'error');
         if (!form.client_name)    return toast('Selecione um cliente', 'error');
         if (!form.executor_name)  return toast('Selecione um executor', 'error');
         try {
-          await api('/tasks', { method: 'POST', body: JSON.stringify({ ...form, estimated_minutes: parseInt(form.estimated_minutes) || 60, squad_id: form.squad_id || null }) });
+          const { task } = await api('/tasks', { method: 'POST', body: JSON.stringify({ ...form, estimated_minutes: parseInt(form.estimated_minutes) || 60, squad_id: form.squad_id || null }) });
+          if (form.workflow_trail && form.workflow_trail.length > 0 && task?.id) {
+            localStorage.setItem(`pixt_task_trail_${task.id}`, JSON.stringify(form.workflow_trail.filter(s => s.executor)));
+          }
           toast('Tarefa criada', 'success');
           setShowCreate(false);
           setForm(defForm);
@@ -8644,6 +9518,24 @@
         } catch (e) { toast(e.message, 'error'); }
       };
 
+      const executorComplete = async (nextExecutor) => {
+        if (!advanceTask) return;
+        try {
+          if (nextExecutor) {
+            const { task } = await api(`/tasks/${advanceTask.id}/advance`, { method: 'POST', body: JSON.stringify({ next_executor_name: nextExecutor }) });
+            setTasks(ts => ts.map(t => t.id === task.id ? task : t));
+            toast(`Passado para ${nextExecutor}`, 'success');
+          } else {
+            const liveStages = (() => { try { const s = localStorage.getItem('pixt_task_stages'); return s ? JSON.parse(s) : TASK_STAGES; } catch { return TASK_STAGES; } })();
+            const lastStage = liveStages[liveStages.length - 1];
+            const { task } = await api(`/tasks/${advanceTask.id}`, { method: 'PATCH', body: JSON.stringify({ current_stage: lastStage.id }) });
+            setTasks(ts => ts.map(t => t.id === task.id ? { ...t, current_stage: lastStage.id } : t));
+            toast('Tarefa finalizada!', 'success');
+          }
+          setAdvanceTask(null);
+        } catch (e) { toast(e.message, 'error'); }
+      };
+
       const inlineUpdate = async (id, field, value) => {
         try {
           await api(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ [field]: value }) });
@@ -8666,7 +9558,7 @@
       ];
 
       return (
-        <div className="flex flex-col animate-in fade-in duration-500 gap-4" style={{ height: 'calc(100vh - 160px)' }}>
+        <div className="flex flex-col animate-in fade-in duration-500 gap-4" style={{ height: 'calc(100vh - 160px)', overflowX: 'hidden' }}>
           {/* Nav */}
           <div className="flex items-center justify-between flex-shrink-0">
             <div className="flex items-center gap-3">
@@ -8691,7 +9583,7 @@
                   <option value="priority">Agrupar: Prioridade</option>
                 </select>
               )}
-              {subView === 'tarefas' && taskView === 'kanban' && (
+              {subView === 'tarefas' && taskView === 'kanban' && !isExecutorLogin && (
                 <button onClick={() => setShowStageConfig(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all">
                   <Settings size={12}/> Etapas
@@ -8784,16 +9676,17 @@
           {/* Views */}
           {subView === 'tarefas' && taskView === 'kanban' && (
             <KanbanView
-              tasks={filtered} stages={taskStages} tags={tags} executors={executors}
+              tasks={myTasks} stages={taskStages} tags={tags} executors={executors}
               dragTask={dragTask} setDragTask={setDragTask}
               isOver={isOver} setIsOver={setIsOver}
               onDrop={moveTaskStage} onDelete={deleteTask}
-              onAdvance={setAdvanceTask} onDetail={setDetailTask}
+              onAdvance={setAdvanceTask} onExecutorComplete={t => { setAdvanceTask(t); setExecutorCompleteTask(t); }}
+              onDetail={setDetailTask} isExecutor={isExecutorLogin}
               primaryColor={primaryColor} />
           )}
           {subView === 'tarefas' && taskView === 'tabela' && (
             <TableView
-              tasks={filtered} stages={taskStages} squads={squads} tags={tags} executors={executors}
+              tasks={myTasks} stages={taskStages} squads={squads} tags={tags} executors={executors}
               groupBy={groupBy} editingCell={editingCell} setEditingCell={setEditingCell}
               onInlineUpdate={inlineUpdate} onDelete={deleteTask}
               onAdvance={setAdvanceTask} primaryColor={primaryColor} />
@@ -8805,7 +9698,11 @@
             <ExecutorsView executors={executors} squads={squads} tasks={tasks} onRefresh={loadAll} primaryColor={primaryColor} />
           )}
           {subView === 'configuracoes' && (
-            <ConfigView tags={tags} onRefresh={loadAll} primaryColor={primaryColor} />
+            <ConfigView
+              tags={tags} onRefresh={loadAll} primaryColor={primaryColor}
+              taskStages={taskStages} onEditStages={() => setShowStageConfig(true)}
+              taskPriorities={taskPriorities} onEditPriorities={() => setShowPriorityConfig(true)}
+            />
           )}
 
           {/* Modais */}
@@ -8814,8 +9711,17 @@
               executors={executors} taskClients={taskClients}
               onSave={createTask} onClose={() => { setShowCreate(false); setForm(defForm); }} primaryColor={primaryColor} />
           )}
-          {advanceTask && (
+          {advanceTask && !executorCompleteTask && (
             <AdvanceStageModal task={advanceTask} executors={executors} onConfirm={advanceStage} onClose={() => setAdvanceTask(null)} primaryColor={primaryColor} />
+          )}
+          {executorCompleteTask && (
+            <ExecutorCompleteModal
+              task={executorCompleteTask}
+              executors={executors}
+              onConfirm={nextEx => { executorComplete(nextEx); setExecutorCompleteTask(null); }}
+              onClose={() => { setExecutorCompleteTask(null); setAdvanceTask(null); }}
+              primaryColor={primaryColor}
+            />
           )}
           {detailTask && (
             <TaskDetailModal task={detailTask} tags={tags} squads={squads} executors={executors} onClose={() => setDetailTask(null)} primaryColor={primaryColor}
@@ -8826,6 +9732,14 @@
               stages={taskStages}
               onSave={saveTaskStages}
               onClose={() => setShowStageConfig(false)}
+              primaryColor={primaryColor}
+            />
+          )}
+          {showPriorityConfig && (
+            <ConfigTaskPrioritiesModal
+              priorities={taskPriorities}
+              onSave={saveTaskPriorities}
+              onClose={() => setShowPriorityConfig(false)}
               primaryColor={primaryColor}
             />
           )}
@@ -9278,294 +10192,19 @@
     };
 
     /* =========================================================
-       MIRO-STYLE MIND MAP — AgentStrategyTab
+       AGENT STRATEGY TAB — uses shared MindMapCanvas
        ========================================================= */
     const AgentStrategyTab = ({ agent, primaryColor }) => {
-      const pc = primaryColor || '#c6f432';
-      const storageKey = `pixt_mindmap_${agent}`;
-
-      const makeNode = (id, x, y, text, color, parentId) => ({ id, x, y, text, color: color || pc, parentId: parentId || null, width: 160, height: 48 });
-
-      const initNodes = () => {
-        const cx = 500, cy = 300;
-        return [
-          makeNode('root', cx, cy, agent || 'Estratégia', pc, null),
-          makeNode('n1', cx - 250, cy - 150, 'Posicionamento', '#6366f1', 'root'),
-          makeNode('n2', cx + 200, cy - 150, 'Métricas', '#22c55e', 'root'),
-          makeNode('n3', cx - 250, cy + 150, 'Expansão', '#f59e0b', 'root'),
-          makeNode('n4', cx + 200, cy + 150, 'Riscos', '#ef4444', 'root'),
-        ];
-      };
-
-      const [nodes, setNodes] = useState(() => {
-        try { const s = localStorage.getItem(storageKey); return s ? JSON.parse(s) : initNodes(); } catch { return initNodes(); }
-      });
-      const [edges] = useState([]); // edges computed from parentId
-      const [pan, setPan] = useState({ x: 0, y: 0 });
-      const [zoom, setZoom] = useState(1);
-      const [draggingNode, setDraggingNode] = useState(null);
-      const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-      const [isPanning, setIsPanning] = useState(false);
-      const [panStart, setPanStart] = useState({ x: 0, y: 0 });
-      const [editingNode, setEditingNode] = useState(null);
-      const [editText, setEditText] = useState('');
-      const [selectedNode, setSelectedNode] = useState(null);
-      const [colorPickNode, setColorPickNode] = useState(null);
-      const svgRef = useRef(null);
-      const toast = useToast();
-
-      const save = (n) => { try { localStorage.setItem(storageKey, JSON.stringify(n)); } catch {} };
-
-      const NODE_COLORS = ['#c6f432','#6366f1','#22c55e','#f59e0b','#ef4444','#3b82f6','#ec4899','#14b8a6','#8b5cf6','#f97316'];
-
-      const getEdges = (ns) => ns.filter(n => n.parentId).map(n => {
-        const parent = ns.find(p => p.id === n.parentId);
-        if (!parent) return null;
-        return { id: `${n.parentId}-${n.id}`, x1: parent.x, y1: parent.y, x2: n.x, y2: n.y, color: n.color };
-      }).filter(Boolean);
-
-      const svgCoords = (e) => {
-        const rect = svgRef.current?.getBoundingClientRect();
-        if (!rect) return { x: 0, y: 0 };
-        return { x: (e.clientX - rect.left - pan.x) / zoom, y: (e.clientY - rect.top - pan.y) / zoom };
-      };
-
-      const onNodeMouseDown = (e, node) => {
-        e.stopPropagation();
-        if (e.button !== 0) return;
-        const c = svgCoords(e);
-        setDraggingNode(node.id);
-        setDragOffset({ x: c.x - node.x, y: c.y - node.y });
-        setSelectedNode(node.id);
-        setColorPickNode(null);
-      };
-
-      const onSvgMouseDown = (e) => {
-        if (e.button === 0 && !draggingNode) {
-          setIsPanning(true);
-          setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-          setSelectedNode(null);
-          setColorPickNode(null);
-        }
-      };
-
-      const onMouseMove = (e) => {
-        if (draggingNode) {
-          const c = svgCoords(e);
-          setNodes(ns => {
-            const next = ns.map(n => n.id === draggingNode ? { ...n, x: c.x - dragOffset.x, y: c.y - dragOffset.y } : n);
-            return next;
-          });
-        } else if (isPanning) {
-          setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
-        }
-      };
-
-      const onMouseUp = () => {
-        if (draggingNode) { setNodes(ns => { save(ns); return ns; }); }
-        setDraggingNode(null);
-        setIsPanning(false);
-      };
-
-      const onWheel = (e) => {
-        e.preventDefault();
-        const delta = e.deltaY < 0 ? 1.1 : 0.9;
-        setZoom(z => Math.min(3, Math.max(0.2, z * delta)));
-      };
-
-      const addChild = (parentId) => {
-        const parent = nodes.find(n => n.id === parentId);
-        if (!parent) return;
-        const angle = Math.random() * Math.PI * 2;
-        const r = 220;
-        const id = 'n' + Date.now();
-        const colors = NODE_COLORS.filter(c => c !== parent.color);
-        const color = colors[Math.floor(Math.random() * colors.length)];
-        const next = [...nodes, makeNode(id, parent.x + Math.cos(angle) * r, parent.y + Math.sin(angle) * r, 'Novo nó', color, parentId)];
-        setNodes(next); save(next); setSelectedNode(id); setEditingNode(id); setEditText('Novo nó');
-      };
-
-      const deleteNode = (id) => {
-        if (id === 'root') { toast('Não é possível remover o nó raiz', 'error'); return; }
-        const toRemove = new Set([id]);
-        let changed = true;
-        while (changed) {
-          changed = false;
-          nodes.forEach(n => { if (n.parentId && toRemove.has(n.parentId) && !toRemove.has(n.id)) { toRemove.add(n.id); changed = true; } });
-        }
-        const next = nodes.filter(n => !toRemove.has(n.id));
-        setNodes(next); save(next); setSelectedNode(null);
-      };
-
-      const startEdit = (node) => { setEditingNode(node.id); setEditText(node.text); setColorPickNode(null); };
-
-      const commitEdit = () => {
-        if (!editingNode) return;
-        const next = nodes.map(n => n.id === editingNode ? { ...n, text: editText || n.text } : n);
-        setNodes(next); save(next); setEditingNode(null);
-      };
-
-      const changeColor = (id, color) => {
-        const next = nodes.map(n => n.id === id ? { ...n, color } : n);
-        setNodes(next); save(next); setColorPickNode(null);
-      };
-
-      const resetMap = () => { const n = initNodes(); setNodes(n); save(n); setSelectedNode(null); setPan({x:0,y:0}); setZoom(1); };
-
-      const computedEdges = getEdges(nodes);
-
+      const agentName = typeof agent === 'string' ? agent : agent?.name || 'Estratégia';
+      const agentSlug = typeof agent === 'string' ? agent : agent?.slug || 'default';
       return (
-        <div className="animate-in fade-in duration-300 flex flex-col" style={{height:'calc(100vh - 220px)'}}>
-          {/* Toolbar */}
-          <div className="flex items-center justify-between mb-3 shrink-0">
-            <div>
-              <h2 className="text-xl font-black text-gray-900">Mapa Mental — Estratégia</h2>
-              <p className="text-sm text-gray-400">Dê duplo clique num nó para editar. Clique num nó selecionado para adicionar filho.</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setZoom(z => Math.min(3, z * 1.2))} className="w-8 h-8 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-600 transition" title="Zoom in"><ZoomIn size={15}/></button>
-              <button onClick={() => setZoom(z => Math.max(0.2, z * 0.8))} className="w-8 h-8 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-600 transition" title="Zoom out"><ZoomOut size={15}/></button>
-              <button onClick={() => { setPan({x:0,y:0}); setZoom(1); }} className="w-8 h-8 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-600 transition" title="Resetar visão"><Maximize2 size={15}/></button>
-              <span className="text-xs text-gray-400 font-bold w-12 text-center">{Math.round(zoom*100)}%</span>
-              <button onClick={resetMap} className="px-3 py-1.5 rounded-xl border border-red-100 bg-red-50 text-red-500 text-xs font-bold hover:bg-red-100 transition">Reset mapa</button>
-              <button onClick={() => { save(nodes); toast('Mapa salvo!','success'); }} className="px-4 py-2 rounded-xl font-bold text-black text-sm flex items-center gap-1.5 hover:opacity-90 transition" style={{backgroundColor:pc}}>
-                <Save size={14}/> Salvar
-              </button>
-            </div>
-          </div>
-
-          {/* Canvas */}
-          <div className="flex-1 relative rounded-2xl border border-gray-200 bg-[#f8f9fb] overflow-hidden shadow-inner"
-            style={{cursor: isPanning ? 'grabbing' : 'grab'}}
-            ref={svgRef}
-            onMouseDown={onSvgMouseDown}
-            onMouseMove={onMouseMove}
-            onMouseUp={onMouseUp}
-            onMouseLeave={onMouseUp}
-            onWheel={onWheel}>
-
-            {/* Dot grid background */}
-            <svg width="100%" height="100%" className="absolute inset-0 pointer-events-none" style={{zIndex:0}}>
-              <defs>
-                <pattern id="mindDots" x="0" y="0" width="28" height="28" patternUnits="userSpaceOnUse">
-                  <circle cx="1" cy="1" r="1" fill="#d1d5db"/>
-                </pattern>
-              </defs>
-              <rect width="100%" height="100%" fill="url(#mindDots)"/>
-            </svg>
-
-            {/* Main SVG layer for edges */}
-            <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%" style={{zIndex:1}}>
-              <g transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}>
-                {computedEdges.map(e => (
-                  <line key={e.id}
-                    x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2}
-                    stroke={e.color} strokeWidth={2/zoom} strokeOpacity={0.5}
-                    strokeDasharray={`${6/zoom},${3/zoom}`}/>
-                ))}
-              </g>
-            </svg>
-
-            {/* Nodes layer */}
-            <div className="absolute inset-0" style={{zIndex:2}}>
-              {nodes.map(node => {
-                const nx = node.x * zoom + pan.x;
-                const ny = node.y * zoom + pan.y;
-                const w = node.width * zoom;
-                const h = node.height * zoom;
-                const isRoot = node.id === 'root';
-                const isSel = selectedNode === node.id;
-                const isEdit = editingNode === node.id;
-                const fontSize = Math.max(10, 13 * zoom);
-                return (
-                  <div key={node.id}
-                    style={{
-                      position: 'absolute',
-                      left: nx - w/2,
-                      top: ny - h/2,
-                      width: w,
-                      height: h,
-                      userSelect: 'none',
-                      zIndex: isSel ? 10 : 3,
-                    }}>
-                    <div
-                      onMouseDown={(e) => onNodeMouseDown(e, node)}
-                      onDoubleClick={() => startEdit(node)}
-                      className="w-full h-full rounded-xl flex items-center justify-center shadow-md transition-all relative"
-                      style={{
-                        backgroundColor: node.color,
-                        border: isSel ? `${2/zoom}px solid #1f2937` : `${1.5/zoom}px solid rgba(0,0,0,0.15)`,
-                        cursor: draggingNode === node.id ? 'grabbing' : 'grab',
-                        transform: isSel ? 'scale(1.05)' : 'scale(1)',
-                      }}>
-                      {isEdit ? (
-                        <input
-                          autoFocus
-                          value={editText}
-                          onChange={e => setEditText(e.target.value)}
-                          onBlur={commitEdit}
-                          onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditingNode(null); }}
-                          onClick={e => e.stopPropagation()}
-                          className="w-full text-center font-bold outline-none bg-transparent px-2"
-                          style={{fontSize, color: isRoot || node.color === pc ? '#111' : '#fff'}}
-                        />
-                      ) : (
-                        <span className="font-bold px-2 text-center leading-tight overflow-hidden"
-                          style={{fontSize, color: isRoot || node.color === pc ? '#111' : '#fff', maxWidth: '100%', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden'}}>
-                          {node.text}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Node actions when selected */}
-                    {isSel && !isEdit && (
-                      <div className="absolute flex gap-1" style={{top: -28*zoom, left: '50%', transform:'translateX(-50%)', zIndex:20}}>
-                        <button onClick={e => {e.stopPropagation(); addChild(node.id);}}
-                          className="rounded-full bg-white border border-gray-300 shadow text-gray-700 hover:bg-gray-50 flex items-center justify-center transition"
-                          style={{width:22*zoom, height:22*zoom, fontSize:12*zoom}} title="Adicionar filho">
-                          <Plus size={12*zoom}/>
-                        </button>
-                        <button onClick={e => {e.stopPropagation(); startEdit(node);}}
-                          className="rounded-full bg-white border border-gray-300 shadow text-blue-600 hover:bg-blue-50 flex items-center justify-center transition"
-                          style={{width:22*zoom, height:22*zoom}} title="Editar texto">
-                          <Edit3 size={11*zoom}/>
-                        </button>
-                        <button onClick={e => {e.stopPropagation(); setColorPickNode(node.id); }}
-                          className="rounded-full shadow border border-gray-300 flex items-center justify-center transition hover:scale-110"
-                          style={{width:22*zoom, height:22*zoom, backgroundColor:node.color}} title="Cor"/>
-                        {!isRoot && (
-                          <button onClick={e => {e.stopPropagation(); deleteNode(node.id);}}
-                            className="rounded-full bg-white border border-red-200 shadow text-red-500 hover:bg-red-50 flex items-center justify-center transition"
-                            style={{width:22*zoom, height:22*zoom}} title="Excluir">
-                            <Trash2 size={11*zoom}/>
-                          </button>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Color picker */}
-                    {colorPickNode === node.id && (
-                      <div className="absolute bg-white rounded-2xl shadow-2xl border border-gray-200 p-3 flex flex-wrap gap-1.5"
-                        style={{top:'100%', left:'50%', transform:'translateX(-50%)', marginTop:8, zIndex:30, width:160}}
-                        onClick={e => e.stopPropagation()}>
-                        {NODE_COLORS.map(c => (
-                          <button key={c} onClick={() => changeColor(node.id, c)}
-                            className="w-6 h-6 rounded-full border-2 hover:scale-110 transition-all"
-                            style={{backgroundColor:c, borderColor: node.color===c?'#111':'transparent'}}/>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Help overlay */}
-            <div className="absolute bottom-3 left-3 text-[10px] text-gray-400 font-medium pointer-events-none" style={{zIndex:5}}>
-              Scroll = zoom · Arraste fundo = pan · Duplo clique = editar · Clique nó = ações
-            </div>
-          </div>
-        </div>
+        <MindMapCanvas
+          storageKey={`pixt_mindmap_v2_${agentSlug}`}
+          primaryColor={primaryColor}
+          initialTitle={agentName}
+          height="calc(100vh - 200px)"
+          showHeader={true}
+        />
       );
     };
 
