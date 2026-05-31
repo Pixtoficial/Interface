@@ -1,4 +1,5 @@
 # Não publicar no deploy
+backend/node_modules
 backend/_e2e_test.js
 backend/_mock_test.js
 backend/.env

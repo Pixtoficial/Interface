@@ -1,7 +1,7 @@
 const express = require('express');
 const supabase = require('../supabase');
 const { chat, classifyStage } = require('../services/ai');
-const { sendText, fetchInstances } = require('../services/evolution');
+const { sendText, fetchInstances, createInstance, getQRCode, getConnectionState, deleteInstance, setWebhook } = require('../services/evolution');
 const { authRequired } = require('../middleware/auth');
 
 const router = express.Router();
@@ -24,12 +24,11 @@ const TONE_MAP = {
 };
 
 router.post('/webhook', async (req, res) => {
-  res.json({ ok: true });
-
   try {
     const { event, instance, data } = req.body || {};
-    if (event !== 'messages.upsert') return;
-    if (!data || data.key?.fromMe) return;
+    if (event !== 'messages.upsert' || !data || data.key?.fromMe) {
+      return res.json({ ok: true });
+    }
 
     const text = (
       data.message?.conversation ||
@@ -159,11 +158,118 @@ router.post('/webhook', async (req, res) => {
   } catch (err) {
     console.error('[WhatsApp] Erro:', err.message);
   }
+  res.json({ ok: true });
 });
 
 router.get('/instances', authRequired, async (req, res) => {
   try { res.json({ instances: await fetchInstances() }); }
   catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ----------------------------------------------------------
+   Criar nova instância WhatsApp + configurar webhook
+---------------------------------------------------------- */
+router.post('/create-instance', authRequired, async (req, res) => {
+  const { name, agent_slug } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'name obrigatório' });
+
+  try {
+    const result = await createInstance(name);
+
+    // Configura webhook para apontar para este backend
+    const webhookUrl = `${process.env.APP_URL || 'http://localhost:3001'}/api/whatsapp/webhook`;
+    try { await setWebhook(name, webhookUrl); } catch (we) {
+      console.warn('[WhatsApp] Webhook set falhou (configurável depois):', we.message);
+    }
+
+    // Salva canal como pendente no Supabase
+    await supabase.from('whatsapp_channels').upsert({
+      user_id: req.user.uid,
+      agent_slug: agent_slug || 'vendas',
+      number: '',
+      evolution_instance: name,
+      active: false,
+    }, { onConflict: 'user_id,agent_slug,evolution_instance' });
+
+    // Retorna QR code se já disponível na resposta de criação
+    const qr = result?.qrcode || null;
+    res.json({ ok: true, instance: name, qr });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ----------------------------------------------------------
+   Buscar QR Code de uma instância (para atualização)
+---------------------------------------------------------- */
+router.get('/instance-qr/:name', authRequired, async (req, res) => {
+  try {
+    const data = await getQRCode(req.params.name);
+    res.json({ qr: data });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ----------------------------------------------------------
+   Status de conexão da instância
+---------------------------------------------------------- */
+router.get('/instance-status/:name', authRequired, async (req, res) => {
+  try {
+    const data = await getConnectionState(req.params.name);
+    // Evolution API retorna { instance: { instanceName, state } } ou { state }
+    const state = data?.instance?.state || data?.state || 'unknown';
+
+    // Se conectou, ativa o canal no banco
+    if (state === 'open') {
+      await supabase.from('whatsapp_channels')
+        .update({ active: true })
+        .eq('user_id', req.user.uid)
+        .eq('evolution_instance', req.params.name);
+    }
+
+    res.json({ state });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ----------------------------------------------------------
+   Deletar instância
+---------------------------------------------------------- */
+router.delete('/instance/:name', authRequired, async (req, res) => {
+  const { name } = req.params;
+  try { await deleteInstance(name); } catch (e) {
+    console.warn('[WhatsApp] deleteInstance Evolution:', e.message);
+  }
+  await supabase.from('whatsapp_channels').delete()
+    .eq('user_id', req.user.uid).eq('evolution_instance', name);
+  res.json({ ok: true });
+});
+
+/* ----------------------------------------------------------
+   Reconfigurar webhook de todas as instâncias do usuário
+   Útil após troca de domínio/APP_URL em produção
+---------------------------------------------------------- */
+router.post('/reconfigure-webhooks', authRequired, async (req, res) => {
+  const webhookUrl = `${process.env.APP_URL || 'http://localhost:3001'}/api/whatsapp/webhook`;
+
+  const { data: channels } = await supabase
+    .from('whatsapp_channels')
+    .select('evolution_instance')
+    .eq('user_id', req.user.uid);
+
+  const results = [];
+  for (const ch of (channels || [])) {
+    try {
+      await setWebhook(ch.evolution_instance, webhookUrl);
+      results.push({ instance: ch.evolution_instance, ok: true });
+    } catch (e) {
+      results.push({ instance: ch.evolution_instance, ok: false, error: e.message });
+    }
+  }
+
+  res.json({ webhookUrl, results });
 });
 
 module.exports = router;

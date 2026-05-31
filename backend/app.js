@@ -38,6 +38,7 @@ app.use('/api/timetracking', require('./routes/timetracking'));
 app.use('/api/goals', require('./routes/goals'));
 app.use('/api/bootstrap', require('./routes/bootstrap'));
 app.use('/api/executor-users', require('./routes/executor-users'));
+app.use('/api/traffic', require('./routes/traffic'));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 

@@ -27,6 +27,35 @@
     ::-webkit-scrollbar-thumb:hover { background: #94a3b8; border: 2px solid transparent; background-clip: content-box; }
     .drop-target { outline: 2px dashed #c6f432; outline-offset: -6px; background: rgba(198,244,50,0.08) !important; }
     .dragging { opacity: 0.4; }
+
+    /* ── Dark mode content area overrides ────────────────── */
+    [data-theme="dark"] .bg-white { background-color: #1f2937 !important; }
+    [data-theme="dark"] .bg-white\/80 { background-color: rgba(31,41,55,0.95) !important; }
+    [data-theme="dark"] .bg-white\/60 { background-color: rgba(31,41,55,0.80) !important; }
+    [data-theme="dark"] .bg-gray-50 { background-color: #111827 !important; }
+    [data-theme="dark"] .bg-gray-100 { background-color: #1f2937 !important; }
+    [data-theme="dark"] .border-gray-100,
+    [data-theme="dark"] .border-gray-200 { border-color: #374151 !important; }
+    [data-theme="dark"] .text-gray-900 { color: #f3f4f6 !important; }
+    [data-theme="dark"] .text-gray-800 { color: #e5e7eb !important; }
+    [data-theme="dark"] .text-gray-700 { color: #d1d5db !important; }
+    [data-theme="dark"] .text-gray-600 { color: #9ca3af !important; }
+    [data-theme="dark"] .text-gray-500 { color: #6b7280 !important; }
+    [data-theme="dark"] .text-gray-400 { color: #4b5563 !important; }
+    [data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
+    [data-theme="dark"] textarea,
+    [data-theme="dark"] select {
+      background-color: #111827 !important;
+      border-color: #374151 !important;
+      color: #e5e7eb !important;
+    }
+    [data-theme="dark"] table thead tr { background-color: #111827 !important; }
+    [data-theme="dark"] .divide-gray-50 > * + * { border-color: #1f2937 !important; }
+    [data-theme="dark"] .divide-gray-100 > * + * { border-color: #374151 !important; }
+    [data-theme="dark"] .shadow-sm { box-shadow: 0 1px 3px rgba(0,0,0,0.5) !important; }
+    [data-theme="dark"] .hover\:bg-gray-50:hover { background-color: #1f2937 !important; }
+    [data-theme="dark"] .hover\:bg-white\/80:hover { background-color: rgba(31,41,55,0.9) !important; }
+    [data-theme="dark"] .hover\:bg-white\/50:hover { background-color: rgba(31,41,55,0.6) !important; }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
@@ -2374,8 +2403,49 @@
     };
 
     /* ---- Traffic & Mídias Tab — routed by activeTab prop ---- */
-    const AdminTrafficTab = ({ primaryColor, activeTab, accountSeed = 0 }) => {
+    const AdminTrafficTab = ({ primaryColor, activeTab, accountSeed = 0, realData = {} }) => {
       const subTab = activeTab || 'overview';
+
+      // Processa dados reais do Meta Ads
+      const processMetaReal = (rawData) => {
+        if (!rawData?.insights?.length) return null;
+        const rows = rawData.insights;
+        const tot = rows.reduce((a, r) => {
+          a.spend += parseFloat(r.spend || 0);
+          a.impressions += parseInt(r.impressions || 0);
+          a.clicks += parseInt(r.clicks || 0);
+          const leads = (r.actions || []).find(x => x.action_type === 'lead' || x.action_type === 'leadgen_other')?.value || 0;
+          a.leads += parseInt(leads);
+          return a;
+        }, { spend: 0, impressions: 0, clicks: 0, leads: 0 });
+        tot.cpm = tot.impressions > 0 ? (tot.spend / tot.impressions) * 1000 : 0;
+        tot.ctr = tot.impressions > 0 ? (tot.clicks / tot.impressions) * 100 : 0;
+        tot.cpc = tot.clicks > 0 ? tot.spend / tot.clicks : 0;
+        tot.cpa = tot.leads > 0 ? tot.spend / tot.leads : 0;
+        return { ...tot, rows };
+      };
+
+      // Processa dados reais do GA4
+      const processGA4Real = (rawData) => {
+        if (!rawData?.rows?.length) return null;
+        const mIdx = (rawData.metricHeaders || []).reduce((a, h, i) => { a[h.name] = i; return a; }, {});
+        const rows = rawData.rows;
+        const tot = rows.reduce((a, r) => {
+          const mv = r.metricValues || [];
+          a.sessions += parseInt(mv[mIdx.sessions]?.value || 0);
+          a.activeUsers += parseInt(mv[mIdx.activeUsers]?.value || 0);
+          a.newUsers += parseInt(mv[mIdx.newUsers]?.value || 0);
+          a.conversions += parseInt(mv[mIdx.conversions]?.value || 0);
+          a.pageViews += parseInt(mv[mIdx.screenPageViews]?.value || 0);
+          a.engagementSum += parseFloat(mv[mIdx.engagementRate]?.value || 0);
+          return a;
+        }, { sessions: 0, activeUsers: 0, newUsers: 0, conversions: 0, pageViews: 0, engagementSum: 0 });
+        tot.engagementRate = rows.length > 0 ? (tot.engagementSum / rows.length) * 100 : 0;
+        return { ...tot, rows };
+      };
+
+      const metaReal = processMetaReal(realData.meta);
+      const ga4Real = processGA4Real(realData.ga4);
 
       // ── Date range state ──────────────────────────────────────
       const [dateRange, setDateRange] = useState(() => {
@@ -2609,7 +2679,11 @@
       const MetaAdsContent = () => {
         const rand=seededRnd(55);
         const scale=(base)=>base*(pts/30)*(0.95+rand()*0.1);
-        const spend=scale(USER_B.metaSpend), impr=scale(USER_B.impressions*0.6), clicks_=scale(USER_B.clicks*0.56), leads_=scale(USER_B.leads*0.56);
+        // Usa dados reais se disponíveis, senão usa mock
+        const spend   = metaReal ? metaReal.spend      : scale(USER_B.metaSpend);
+        const impr    = metaReal ? metaReal.impressions : scale(USER_B.impressions*0.6);
+        const clicks_ = metaReal ? metaReal.clicks      : scale(USER_B.clicks*0.56);
+        const leads_  = metaReal ? metaReal.leads       : scale(USER_B.leads*0.56);
         const cpm_=impr>0?(spend/impr)*1000:0, ctr_=impr>0?(clicks_/impr)*100:0, cpc_=clicks_>0?spend/clicks_:0, cpa_=leads_>0?spend/leads_:0, roas_=3.8;
         const top5=[{name:'Leads Quentes',spend:spend*0.28,leads:leads_*0.3,roas:4.1},{name:'Retargeting',spend:spend*0.22,leads:leads_*0.25,roas:3.8},{name:'Topo Funil Lookalike',spend:spend*0.20,leads:leads_*0.18,roas:3.2},{name:'Catálogo Produtos',spend:spend*0.17,leads:leads_*0.15,roas:2.9},{name:'Branding Vídeo',spend:spend*0.13,leads:leads_*0.12,roas:1.9}];
         const camps=[{name:'Leads Quentes',status:'Ativa',spend:spend*0.28,leads:Math.round(leads_*0.30),cpl:leads_*0.30>0?spend*0.28/(leads_*0.30):0},{name:'Retargeting 30d',status:'Ativa',spend:spend*0.22,leads:Math.round(leads_*0.25),cpl:leads_*0.25>0?spend*0.22/(leads_*0.25):0},{name:'Topo Funil Lookalike 3%',status:'Ativa',spend:spend*0.20,leads:Math.round(leads_*0.18),cpl:leads_*0.18>0?spend*0.20/(leads_*0.18):0},{name:'Catálogo Produtos em Alta',status:'Pausada',spend:spend*0.17,leads:Math.round(leads_*0.15),cpl:leads_*0.15>0?spend*0.17/(leads_*0.15):0},{name:'Branding Vídeo Views',status:'Pausada',spend:spend*0.13,leads:Math.round(leads_*0.12),cpl:leads_*0.12>0?spend*0.13/(leads_*0.12):0}];
@@ -2717,8 +2791,12 @@
       const GA4Content = () => {
         const rand=seededRnd(19);
         const scale=(base)=>base*(pts/30)*(0.95+rand()*0.1);
-        const users_=scale(USER_B.pageViews*0.35), sess_=scale(USER_B.pageViews*0.6), convEvts=scale(USER_B.leads), revenue=scale(USER_B.totalRevenue);
-        const engRate=58.4;
+        // Usa dados reais do GA4 se disponíveis
+        const users_   = ga4Real ? ga4Real.activeUsers   : scale(USER_B.pageViews*0.35);
+        const sess_    = ga4Real ? ga4Real.sessions       : scale(USER_B.pageViews*0.6);
+        const convEvts = ga4Real ? ga4Real.conversions    : scale(USER_B.leads);
+        const engRate  = ga4Real ? ga4Real.engagementRate : 58.4;
+        const revenue  = scale(USER_B.totalRevenue);
         const sources=[{source:'Paid Search',sessions:Math.round(sess_*0.28),color:'#4285F4'},{source:'Paid Social',sessions:Math.round(sess_*0.26),color:'#1877F2'},{source:'Organic Search',sessions:Math.round(sess_*0.18),color:'#34A853'},{source:'Direct',sessions:Math.round(sess_*0.12),color:'#8B5CF6'},{source:'Email',sessions:Math.round(sess_*0.06),color:'#F59E0B'},{source:'Organic Social',sessions:Math.round(sess_*0.05),color:'#E1306C'},{source:'Outros',sessions:Math.round(sess_*0.05),color:'#9ca3af'}];
         const devices=[{device:'Mobile',sessions:Math.round(sess_*0.62),color:'#4285F4'},{device:'Desktop',sessions:Math.round(sess_*0.32),color:'#34A853'},{device:'Tablet',sessions:Math.round(sess_*0.06),color:'#FBBC05'}];
         const regions=[{region:'São Paulo',sessions:Math.round(sess_*0.385)},{region:'Rio de Janeiro',sessions:Math.round(sess_*0.211)},{region:'Minas Gerais',sessions:Math.round(sess_*0.130)},{region:'Rio Grande do Sul',sessions:Math.round(sess_*0.090)},{region:'Paraná',sessions:Math.round(sess_*0.065)},{region:'Bahia',sessions:Math.round(sess_*0.047)},{region:'Outros',sessions:Math.round(sess_*0.072)}];
@@ -3385,7 +3463,7 @@
 
       // ── Shared content renderer ──
       const ContentArea = ({ darkBg }) => (
-        <div className="flex-1 overflow-y-auto p-6" style={darkBg ? {backgroundColor:'#0d1117'} : {}}>
+        <div className="flex-1 overflow-y-auto p-6" data-theme={darkBg ? 'dark' : 'light'} style={darkBg ? {backgroundColor:'#0d1117'} : {}}>
           {!activeAgent && activeSpecial === 'overview'       && <AdminOverviewTab primaryColor={PRIMARY} />}
           {!activeAgent && isTrafficTab                       && <AdminTrafficTab primaryColor={PRIMARY} activeTab={trafficSubId} />}
           {!activeAgent && activeSpecial === 'pipeline-geral' && <AdminPipelineTab primaryColor={PRIMARY} />}
@@ -3931,7 +4009,7 @@
               </div>
             </header>
 
-            <div className="flex-1 overflow-y-auto p-8 relative z-10">
+            <div className="flex-1 overflow-y-auto p-8 relative z-10" data-theme={dark ? 'dark' : 'light'}>
               <div className="max-w-6xl mx-auto pb-20">
                 <PageHeader
                   activeTab={activeTab}
@@ -3953,10 +4031,8 @@
                 {activeTab === 'logs' && <LogsTab primaryColor={primaryColor} />}
                 {activeTab === 'settings' && <ClientSettingsView agent={currentAgent} primaryColor={primaryColor} />}
                 {activeTab === 'users' && auth.user?.role === 'admin' && <AdminPanel primaryColor={primaryColor} />}
-                {activeTab === 'revenue' && <RevenueDashboard primaryColor={primaryColor} />}
                 {activeTab === 'traffic' && <ClientTrafficTab primaryColor={primaryColor} />}
                 {activeTab === 'tasks' && <TasksTab primaryColor={primaryColor} />}
-                {activeTab === 'forecast' && <ForecastTab primaryColor={primaryColor} />}
                 {activeTab === 'leadscore' && <LeadScoreTab primaryColor={primaryColor} />}
                 {activeTab === 'playbook' && <AgentPlaybookTab agent={currentAgent} primaryColor={primaryColor} />}
               </div>
@@ -4073,9 +4149,7 @@
               {!collapsed && <div className="pt-4 pb-2 shrink-0"><p className="text-[10px] font-bold uppercase tracking-wider px-3" style={{color:textMuted === 'text-gray-400' ? '#9ca3af' : '#9ca3af'}}>Plataforma</p></div>}
               {collapsed && <div className="w-8 h-px bg-gray-200 dark:bg-gray-700 my-2 shrink-0"/>}
               <NavI icon={<TrendingUp size={18} />} label="Tráfego & Mídias" isActive={activeTab === 'traffic'} onClick={() => setActiveTab('traffic')} />
-              <NavI icon={<BarChart3 size={18} />} label="Receita" isActive={activeTab === 'revenue'} onClick={() => setActiveTab('revenue')} />
               <NavI icon={<CheckCircle2 size={18} />} label="Gestão de Tarefas" isActive={activeTab === 'tasks'} onClick={() => setActiveTab('tasks')} />
-              <NavI icon={<Cpu size={18} />} label="DRE Projetado" isActive={activeTab === 'forecast'} onClick={() => setActiveTab('forecast')} />
               <NavI icon={<Target size={18} />} label="Lead Scoring" isActive={activeTab === 'leadscore'} onClick={() => setActiveTab('leadscore')} />
 
               {!collapsed && <div className="pt-4 pb-2 shrink-0"><p className="text-[10px] font-bold uppercase tracking-wider px-3" style={{color:'#9ca3af'}}>Administração</p></div>}
@@ -4156,97 +4230,119 @@
        PLATFORM CONNECTION SYSTEM
        ========================================================= */
     const usePlatformConnections = () => {
-      const KEY = 'pixt_platform_connections_v2';
-      const MOCK_ACCOUNTS = {
-        meta: [
-          { id:'act_28394756', name:'Conta Principal',    budget:'R$ 120k/mês' },
-          { id:'act_17485632', name:'Conta Retargeting',  budget:'R$ 32k/mês'  },
-          { id:'act_93627481', name:'Conta Teste A/B',    budget:'R$ 8k/mês'   },
-        ],
-        gads: [
-          { id:'284-736-9012', name:'Search Principal',    budget:'R$ 85k/mês' },
-          { id:'563-841-2037', name:'Display & YouTube',   budget:'R$ 24k/mês' },
-        ],
-        ga4: [
-          { id:'G-2KX94P1WT', name:'Propriedade Principal', budget:'Ilimitado' },
-          { id:'G-8M7NR3QZX', name:'App Mobile',            budget:'Ilimitado' },
-        ],
+      const SEL_KEY = 'pixt_traffic_selected_v3';
+      const [status, setStatus] = useState({ meta: false, google: false });
+      const [accounts, setAccounts] = useState({ meta: [], ga4: [] });
+      const [selectedIds, setSelectedIds] = useState(() => { try { return JSON.parse(localStorage.getItem(SEL_KEY)||'{}'); } catch { return {}; } });
+      const [loadingStatus, setLoadingStatus] = useState(true);
+
+      const reload = useCallback(async () => {
+        setLoadingStatus(true);
+        try {
+          const s = await api('/traffic/status');
+          setStatus(s);
+          if (s.meta) {
+            try { const { accounts: a } = await api('/traffic/meta/accounts'); setAccounts(prev => ({ ...prev, meta: a||[] })); } catch {}
+          }
+          if (s.google) {
+            try { const { properties } = await api('/traffic/ga4/properties'); setAccounts(prev => ({ ...prev, ga4: properties||[] })); } catch {}
+          }
+        } catch {} finally { setLoadingStatus(false); }
+      }, []);
+
+      useEffect(() => { reload(); }, [reload]);
+
+      // Detecta retorno de OAuth pela URL
+      useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const metaStatus = params.get('traffic_meta');
+        const googleStatus = params.get('traffic_google');
+        if (metaStatus || googleStatus) {
+          window.history.replaceState({}, '', window.location.pathname);
+          if (metaStatus === 'ok') { setTimeout(reload, 500); }
+          if (googleStatus === 'ok') { setTimeout(reload, 500); }
+        }
+      }, [reload]);
+
+      const connectPlatform = (platform) => {
+        const token = auth.token || '';
+        const authPath = platform === 'google' ? 'google' : 'meta';
+        window.location.href = `${API_BASE}/traffic/${authPath}/auth?token=${token}`;
       };
-      const [conns, setConns] = useState(() => { try { return JSON.parse(localStorage.getItem(KEY)||'{}'); } catch { return {}; } });
-      const save = next => { setConns(next); localStorage.setItem(KEY, JSON.stringify(next)); };
-      const connect = platform => {
-        const accounts = MOCK_ACCOUNTS[platform]||[];
-        save({ ...conns, [platform]:{ connected:true, accounts, selectedAccountId:accounts[0]?.id } });
+
+      const disconnectPlatform = async (platform) => {
+        const p = platform === 'ga4' ? 'google' : platform;
+        await api(`/traffic/disconnect/${p}`, { method: 'DELETE' });
+        setStatus(s => ({ ...s, [p]: false, google: p === 'google' ? false : s.google }));
+        setAccounts(a => ({ ...a, [platform]: [] }));
       };
-      const disconnect = platform => { const next={...conns}; delete next[platform]; save(next); };
-      const selectAccount = (platform, id) => { if(!conns[platform]) return; save({...conns,[platform]:{...conns[platform],selectedAccountId:id}}); };
-      const isConnected = p => !!conns[p]?.connected;
-      const getSelectedAccount = p => conns[p]?.selectedAccountId||null;
-      const getAccounts = p => conns[p]?.accounts||[];
-      const getSeed = p => { const id=getSelectedAccount(p)||''; let h=0; for(let i=0;i<id.length;i++) h=((h<<5)-h)+id.charCodeAt(i); return Math.abs(h)%100; };
-      return { isConnected, getSelectedAccount, getAccounts, connect, disconnect, selectAccount, getSeed };
+
+      const selectAccount = (platform, id) => {
+        const next = { ...selectedIds, [platform]: id };
+        setSelectedIds(next);
+        localStorage.setItem(SEL_KEY, JSON.stringify(next));
+      };
+
+      const isConnected = p => {
+        if (p === 'ga4') return status.google;
+        if (p === 'gads') return status.google;
+        return status[p] || false;
+      };
+      const getAccounts = p => {
+        if (p === 'ga4') return accounts.ga4 || [];
+        return accounts[p] || [];
+      };
+      const getSelectedAccount = p => {
+        const saved = selectedIds[p];
+        const first = getAccounts(p)[0];
+        return saved || first?.id || first?.property || '';
+      };
+      const getSeed = () => {
+        const metaId = getSelectedAccount('meta') || getSelectedAccount('ga4') || '';
+        return metaId.split('').reduce((a, c) => a + c.charCodeAt(0), 0) || 0;
+      };
+
+      return { isConnected, getSelectedAccount, getAccounts, connectPlatform, disconnectPlatform, selectAccount, getSeed, loadingStatus, reload };
     };
 
     const ConnectPlatformModal = ({ platform, title, icon: Icon, color, onConfirm, onClose }) => {
-      const [step, setStep] = useState('form');
       const PERMS = {
-        meta:['Ler dados de campanhas e conjuntos','Acessar métricas de desempenho','Visualizar contas de anúncios','Ler dados de públicos'],
-        gads:['Acessar campanhas do Google Ads','Ler relatórios de conversão','Visualizar métricas de desempenho','Acessar dados de orçamento'],
-        ga4: ['Ler dados de sessões e eventos','Acessar relatórios de usuários','Visualizar funis de conversão','Ler dados de retenção'],
+        meta:['Ler métricas de campanhas e conjuntos de anúncios','Acessar gastos, CPM, CTR, CPC e ROAS','Visualizar leads gerados por anúncios','Ler relatórios de insights por período'],
+        gads:['Acessar campanhas do Google Ads','Ler relatórios de conversão e CPA','Visualizar métricas de cliques e impressões','Acessar dados de orçamento e ROAS'],
+        ga4: ['Ler dados de sessões e usuários ativos','Acessar relatórios de engajamento','Visualizar funis de conversão','Ler dados de retenção e bounce rate'],
       };
       const perms = PERMS[platform]||[];
-      const handleConnect = () => {
-        setStep('loading');
-        setTimeout(()=>{ setStep('done'); setTimeout(()=>{ onConfirm(); onClose(); },800); },1800);
-      };
       return createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 overflow-hidden" onClick={e=>e.stopPropagation()}>
-            {step==='loading'?(
-              <div className="p-12 flex flex-col items-center gap-4">
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center animate-pulse" style={{backgroundColor:color+'20'}}><Icon size={32} style={{color}}/></div>
-                <p className="font-bold text-gray-900 text-lg">Conectando ao {title}…</p>
-                <Loader2 size={24} className="animate-spin" style={{color}}/>
-                <p className="text-xs text-gray-400 text-center">Verificando credenciais e permissões</p>
-              </div>
-            ):step==='done'?(
-              <div className="p-12 flex flex-col items-center gap-4">
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-emerald-100"><CheckCircle2 size={32} className="text-emerald-500"/></div>
-                <p className="font-bold text-gray-900 text-lg">Conectado com sucesso!</p>
-                <p className="text-xs text-gray-400">Carregando suas contas de anúncios…</p>
-              </div>
-            ):(
-              <>
-                <div className="p-6 border-b border-gray-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{backgroundColor:color+'18'}}><Icon size={22} style={{color}}/></div>
-                    <div>
-                      <p className="font-black text-gray-900">Conectar {title}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">Autorize o acesso às suas métricas</p>
-                    </div>
-                    <button onClick={onClose} className="ml-auto p-2 rounded-xl hover:bg-gray-100 text-gray-400 transition"><X size={16}/></button>
-                  </div>
+            <div className="p-6 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{backgroundColor:color+'18'}}><Icon size={22} style={{color}}/></div>
+                <div>
+                  <p className="font-black text-gray-900">Conectar {title}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Autorize o acesso OAuth às suas métricas reais</p>
                 </div>
-                <div className="p-6">
-                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Permissões solicitadas</p>
-                  <ul className="space-y-2 mb-6">
-                    {perms.map((p,i)=>(
-                      <li key={i} className="flex items-center gap-2.5 text-sm text-gray-600">
-                        <div className="w-4 h-4 rounded-full flex items-center justify-center shrink-0" style={{backgroundColor:color+'20'}}><CheckCircle2 size={10} style={{color}}/></div>
-                        {p}
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-[10px] text-gray-400 mb-4 leading-relaxed">Seus dados são exibidos apenas no painel. Nunca criamos, editamos ou excluímos campanhas.</p>
-                  <div className="flex gap-2">
-                    <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 hover:bg-gray-50 transition">Cancelar</button>
-                    <button onClick={handleConnect} className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition hover:opacity-90" style={{backgroundColor:color,color:'#fff'}}>
-                      <Link size={14}/> Autorizar Acesso
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
+                <button onClick={onClose} className="ml-auto p-2 rounded-xl hover:bg-gray-100 text-gray-400 transition"><X size={16}/></button>
+              </div>
+            </div>
+            <div className="p-6">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Dados que serão lidos</p>
+              <ul className="space-y-2 mb-6">
+                {perms.map((p,i)=>(
+                  <li key={i} className="flex items-center gap-2.5 text-sm text-gray-600">
+                    <div className="w-4 h-4 rounded-full flex items-center justify-center shrink-0" style={{backgroundColor:color+'20'}}><CheckCircle2 size={10} style={{color}}/></div>
+                    {p}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-[10px] text-gray-400 mb-4 leading-relaxed">Você será redirecionado para fazer login na sua conta. Após autorizar, voltará automaticamente ao painel com dados reais.</p>
+              <div className="flex gap-2">
+                <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 hover:bg-gray-50 transition">Cancelar</button>
+                <button onClick={onConfirm} className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition hover:opacity-90" style={{backgroundColor:color,color:'#fff'}}>
+                  <Link size={14}/> Autorizar e Conectar
+                </button>
+              </div>
+            </div>
           </div>
         </div>,
         document.body
@@ -4281,7 +4377,7 @@
               </div>
               <select value={selectedId||''} onChange={e=>onSelect(e.target.value)}
                 className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 font-semibold outline-none focus:border-gray-400 shadow-sm">
-                {accounts.map(a=><option key={a.id} value={a.id}>{a.name} ({a.id}) — {a.budget}</option>)}
+                {accounts.map(a=><option key={a.id} value={a.id}>{a.name}{a.currency ? ` (${a.currency})` : a.account ? ` — ${a.account}` : ''}</option>)}
               </select>
             </div>
           </div>
@@ -4296,7 +4392,10 @@
     const ClientTrafficTab = ({ primaryColor }) => {
       const [subTab, setSubTab] = useState('overview');
       const [showModal, setShowModal] = useState(null);
-      const { isConnected, getSelectedAccount, getAccounts, connect, disconnect, selectAccount, getSeed } = usePlatformConnections();
+      const [realData, setRealData] = useState({ meta: null, ga4: null });
+      const [loadingReal, setLoadingReal] = useState(false);
+      const { isConnected, getSelectedAccount, getAccounts, connectPlatform, disconnectPlatform, selectAccount, getSeed, loadingStatus, reload } = usePlatformConnections();
+      const toast = useToast();
 
       const PLATFORMS = {
         meta: { title:'Meta Ads',           icon:Target,   color:'#1877F2' },
@@ -4308,38 +4407,84 @@
         {id:'meta',       label:'Meta Ads',     icon:Target},
         {id:'gads',       label:'Google Ads',   icon:Globe},
         {id:'ga4',        label:'GA4',          icon:Activity},
-        {id:'funil',      label:'Funil',        icon:Filter},
         {id:'criativos',  label:'Criativos',    icon:Star},
         {id:'estrategia', label:'Estratégia',   icon:MapPin},
       ];
       const PLAT_TABS = { meta:'meta', gads:'gads', ga4:'ga4' };
-      const currentPlat = PLAT_TABS[subTab]||null;
+      const currentPlat = PLAT_TABS[subTab] || null;
+
+      // Fetch dados reais quando troca de aba ou quando status muda
+      useEffect(() => {
+        if (!currentPlat) return;
+        if (currentPlat === 'meta' && isConnected('meta')) {
+          const acctId = getSelectedAccount('meta');
+          if (!acctId) return;
+          setLoadingReal(true);
+          const end = new Date(); const start = new Date(); start.setDate(start.getDate() - 29);
+          const fmt = d => d.toISOString().slice(0,10);
+          api(`/traffic/meta/insights?account_id=${acctId}&since=${fmt(start)}&until=${fmt(end)}`)
+            .then(d => setRealData(prev => ({ ...prev, meta: d })))
+            .catch(e => toast(e.message, 'error'))
+            .finally(() => setLoadingReal(false));
+        }
+        if (currentPlat === 'ga4' && isConnected('ga4')) {
+          const propId = getSelectedAccount('ga4');
+          if (!propId) return;
+          setLoadingReal(true);
+          api(`/traffic/ga4/metrics?property_id=${propId}`)
+            .then(d => setRealData(prev => ({ ...prev, ga4: d })))
+            .catch(e => toast(e.message, 'error'))
+            .finally(() => setLoadingReal(false));
+        }
+      }, [subTab, isConnected('meta'), isConnected('ga4'), getSelectedAccount('meta'), getSelectedAccount('ga4')]);
+
+      // Detecta retorno OAuth e mostra toast
+      useEffect(() => {
+        const p = new URLSearchParams(window.location.search);
+        if (p.get('traffic_meta') === 'ok') toast('Meta Ads conectado com sucesso!', 'success');
+        if (p.get('traffic_meta') === 'error') toast('Erro ao conectar Meta Ads', 'error');
+        if (p.get('traffic_google') === 'ok') toast('Google Analytics conectado!', 'success');
+        if (p.get('traffic_google') === 'error') toast('Erro ao conectar Google', 'error');
+      }, []);
+
+      const handleConnect = (plat) => {
+        const oauthPlat = plat === 'ga4' ? 'google' : plat;
+        setShowModal({ platform: plat, oauthPlatform: oauthPlat });
+      };
+
+      const handleDisconnect = async (plat) => {
+        await disconnectPlatform(plat);
+        setRealData(prev => ({ ...prev, [plat]: null }));
+        toast('Conta desconectada', 'success');
+      };
 
       return (
         <div className="space-y-4 animate-in fade-in duration-300">
-          {showModal && PLATFORMS[showModal] && (
+          {showModal && PLATFORMS[showModal.platform] && (
             <ConnectPlatformModal
-              platform={showModal}
-              title={PLATFORMS[showModal].title}
-              icon={PLATFORMS[showModal].icon}
-              color={PLATFORMS[showModal].color}
-              onConfirm={()=>connect(showModal)}
-              onClose={()=>setShowModal(null)}
+              platform={showModal.platform}
+              title={PLATFORMS[showModal.platform].title}
+              icon={PLATFORMS[showModal.platform].icon}
+              color={PLATFORMS[showModal.platform].color}
+              onConfirm={() => { setShowModal(null); connectPlatform(showModal.oauthPlatform); }}
+              onClose={() => setShowModal(null)}
             />
           )}
           <div className="flex gap-1 flex-wrap bg-white border border-gray-200 rounded-2xl p-1.5 shadow-sm">
-            {CLIENT_TRAFFIC_SUBS.map(t=>{
-              const Icon=t.icon, plat=PLAT_TABS[t.id], conn=plat?isConnected(plat):false;
+            {CLIENT_TRAFFIC_SUBS.map(t => {
+              const Icon = t.icon, plat = PLAT_TABS[t.id], conn = plat ? isConnected(plat) : false;
               return (
-                <button key={t.id} onClick={()=>setSubTab(t.id)}
+                <button key={t.id} onClick={() => setSubTab(t.id)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all relative ${subTab===t.id?'text-black shadow-sm':'text-gray-500 hover:text-gray-800'}`}
                   style={subTab===t.id?{backgroundColor:primaryColor}:{}}>
                   <Icon size={12}/> {t.label}
-                  {plat&&conn&&<span className="w-1.5 h-1.5 rounded-full bg-emerald-500 absolute -top-0.5 -right-0.5"/>}
+                  {plat && conn && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 absolute -top-0.5 -right-0.5"/>}
                 </button>
               );
             })}
           </div>
+
+          {/* Banner de conexão por plataforma */}
           {currentPlat && PLATFORMS[currentPlat] && (
             <PlatformConnectionBanner
               platform={currentPlat}
@@ -4349,15 +4494,29 @@
               isConnected={isConnected(currentPlat)}
               accounts={getAccounts(currentPlat)}
               selectedId={getSelectedAccount(currentPlat)}
-              onConnect={()=>setShowModal(currentPlat)}
-              onDisconnect={()=>disconnect(currentPlat)}
-              onSelect={id=>selectAccount(currentPlat,id)}
+              onConnect={() => handleConnect(currentPlat)}
+              onDisconnect={() => handleDisconnect(currentPlat)}
+              onSelect={id => selectAccount(currentPlat, id)}
             />
           )}
+
+          {/* Indicador de dados reais */}
+          {loadingReal && (
+            <div className="flex items-center gap-2 text-xs text-gray-500 bg-blue-50 border border-blue-100 px-4 py-2.5 rounded-xl">
+              <Loader2 size={13} className="animate-spin text-blue-500"/> Carregando dados reais da plataforma...
+            </div>
+          )}
+          {currentPlat && realData[currentPlat === 'gads' ? 'ga4' : currentPlat] && !loadingReal && (
+            <div className="flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-4 py-2.5 rounded-xl">
+              <CheckCircle2 size={13}/> Exibindo dados reais da sua conta
+            </div>
+          )}
+
           <AdminTrafficTab
             primaryColor={primaryColor}
             activeTab={subTab}
-            accountSeed={currentPlat ? getSeed(currentPlat) : 0}
+            accountSeed={getSeed()}
+            realData={realData}
           />
         </div>
       );
@@ -6194,13 +6353,25 @@
       const [template, setTemplate] = useState('Olá {{nome}}, vi que seu negócio ({{categoria}}) em {{cidade}} pode se beneficiar de automação IA. Posso te mostrar como? 🚀');
       const [sending, setSending] = useState(false);
       const [result, setResult] = useState(null);
+      const [instances, setInstances] = useState([]);
+      const [selectedInst, setSelectedInst] = useState('');
+      const [loadingInst, setLoadingInst] = useState(true);
+
+      useEffect(() => {
+        api('/whatsapp/instances').then(d => {
+          const list = Array.isArray(d.instances) ? d.instances : [];
+          setInstances(list);
+          const firstName = list[0]?.instanceName || list[0]?.instance?.instanceName || '';
+          setSelectedInst(firstName);
+        }).catch(() => {}).finally(() => setLoadingInst(false));
+      }, []);
 
       const send = async () => {
         setSending(true);
         try {
           const data = await api('/scrapper/prospect', {
             method: 'POST',
-            body: JSON.stringify({ lead_ids: leads.map(l => l.id), template }),
+            body: JSON.stringify({ lead_ids: leads.map(l => l.id), template, instance: selectedInst }),
           });
           setResult(data);
           toast(`${data.sent} mensagem(ns) enviada(s)!`, 'success');
@@ -6225,6 +6396,24 @@
             </div>
             {!result ? (
               <>
+                <div className="mb-4">
+                  <label className="text-xs font-bold text-gray-500 mb-1.5 block uppercase">Instância WhatsApp</label>
+                  {loadingInst ? (
+                    <div className="flex items-center gap-2 text-xs text-gray-400"><Loader2 size={12} className="animate-spin"/> Carregando instâncias...</div>
+                  ) : instances.length === 0 ? (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-xs text-yellow-800 font-medium">
+                      Nenhuma instância conectada. Configure um número WhatsApp nas Configurações do agente.
+                    </div>
+                  ) : (
+                    <select value={selectedInst} onChange={e => setSelectedInst(e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl py-2.5 px-3 text-sm outline-none focus:border-green-400">
+                      {instances.map(inst => {
+                        const n = inst.instanceName || inst.instance?.instanceName || 'Instância';
+                        return <option key={n} value={n}>{n}</option>;
+                      })}
+                    </select>
+                  )}
+                </div>
                 <div className="mb-4">
                   <label className="text-xs font-bold text-gray-500 mb-1.5 block uppercase">Template da mensagem</label>
                   <p className="text-xs text-gray-400 mb-2">Variáveis: <code className="bg-gray-100 px-1 rounded">{'{{nome}}'}</code> <code className="bg-gray-100 px-1 rounded">{'{{categoria}}'}</code> <code className="bg-gray-100 px-1 rounded">{'{{cidade}}'}</code></p>
@@ -6531,6 +6720,87 @@
         : <ClientSettingsView agent={agent} primaryColor={primaryColor} />;
     };
 
+    /* -- Google Calendar Card (Booker / LeadFlow) -- */
+    const GoogleCalendarCard = ({ primaryColor }) => {
+      const [gcStatus, setGcStatus] = useState(null); // null=loading, false=not connected, true=connected
+      const [gcEvents, setGcEvents] = useState([]);
+      const [loadingEvts, setLoadingEvts] = useState(false);
+      const toast = useToast();
+
+      useEffect(() => {
+        api('/traffic/status').then(s => {
+          setGcStatus(s.google);
+          if (s.google) {
+            setLoadingEvts(true);
+            api('/traffic/calendar/events').then(d => setGcEvents(d.events || [])).catch(() => {}).finally(() => setLoadingEvts(false));
+          }
+        }).catch(() => setGcStatus(false));
+      }, []);
+
+      const connect = () => {
+        window.location.href = `${API_BASE}/traffic/google/auth?token=${auth.token || ''}`;
+      };
+      const disconnect = async () => {
+        await api('/traffic/disconnect/google', { method: 'DELETE' });
+        setGcStatus(false); setGcEvents([]);
+        toast('Google Agenda desconectado', 'success');
+      };
+
+      const fmtEvt = (ev) => {
+        const start = ev.start?.dateTime || ev.start?.date || '';
+        const d = start ? new Date(start) : null;
+        return d ? `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}` : '';
+      };
+
+      return (
+        <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-8 shadow-sm border border-gray-200 shrink-0">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="p-2.5 bg-red-100 text-red-600 rounded-lg"><Calendar size={20}/></div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Google Agenda</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Sincronize reuniões e disponibilidade</p>
+            </div>
+          </div>
+          {gcStatus === null && (
+            <div className="flex items-center gap-2 text-sm text-gray-400"><Loader2 size={14} className="animate-spin"/> Verificando conexão...</div>
+          )}
+          {gcStatus === false && (
+            <div>
+              <p className="text-sm text-gray-600 mb-4 leading-relaxed">Conecte sua conta Google para que o agente consulte sua disponibilidade real e crie reuniões automaticamente no seu calendário.</p>
+              <button onClick={connect} className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm text-black hover:opacity-90 transition w-full justify-center" style={{backgroundColor:primaryColor}}>
+                <Globe size={16}/> Conectar Google Agenda
+              </button>
+            </div>
+          )}
+          {gcStatus === true && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-100 px-3 py-1.5 rounded-full"><CheckCircle2 size={11}/> Conectado</span>
+                <button onClick={disconnect} className="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center gap-1"><Unlink size={11}/> Desconectar</button>
+              </div>
+              {loadingEvts ? (
+                <div className="flex items-center gap-2 text-xs text-gray-400 py-4 justify-center"><Loader2 size={12} className="animate-spin"/> Carregando eventos...</div>
+              ) : gcEvents.length === 0 ? (
+                <p className="text-xs text-gray-400 py-4 text-center">Nenhum evento nos próximos 30 dias</p>
+              ) : (
+                <div className="space-y-2 max-h-52 overflow-y-auto">
+                  {gcEvents.slice(0, 8).map(ev => (
+                    <div key={ev.id} className="flex items-start gap-3 p-2.5 bg-gray-50 rounded-xl">
+                      <div className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0"/>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-gray-900 truncate">{ev.summary || '(sem título)'}</p>
+                        <p className="text-[10px] text-gray-500">{fmtEvt(ev)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    };
+
     /* -- Admin: configurações completas do agente (próprio admin) -- */
     const AdminSettingsView = ({ agent, primaryColor }) => {
       const [settings, setSettings] = useState({ script:'', max_lines:'3', response_time:'0', language_type:'casual', reminders_count:'3', reminders_times:'24h, 1h, 15m' });
@@ -6538,6 +6808,16 @@
       const [loading, setLoading] = useState(true);
       const [saving, setSaving] = useState(false);
       const toast = useToast();
+
+      // WhatsApp QR Connection
+      const [showQRFlow, setShowQRFlow] = useState(false);
+      const [newInstName, setNewInstName] = useState('');
+      const [qrData, setQrData] = useState(null);
+      const [connState, setConnState] = useState('idle'); // idle|creating|pending_scan|connected|error
+      const qrPollRef = useRef(null);
+
+      const stopQRPoll = () => { if (qrPollRef.current) { clearInterval(qrPollRef.current); qrPollRef.current = null; } };
+      useEffect(() => () => stopQRPoll(), []);
 
       const load = useCallback(async () => {
         setLoading(true);
@@ -6563,6 +6843,63 @@
       const updateCh = (idx, patch) => setChannels(cs => cs.map((c, i) => i === idx ? { ...c, ...patch } : c));
       const addCh = () => setChannels(cs => [...cs, { number: '', active: 1, evolution_instance: '' }]);
       const removeCh = (idx) => setChannels(cs => cs.filter((_, i) => i !== idx));
+
+      const deleteInstance = async (instanceName) => {
+        if (!confirm(`Desconectar a instância "${instanceName}"?`)) return;
+        try {
+          await api(`/whatsapp/instance/${instanceName}`, { method: 'DELETE' });
+          toast('Instância removida!', 'success');
+          load();
+        } catch (e) { toast(e.message, 'error'); }
+      };
+
+      const startQRFlow = () => {
+        setShowQRFlow(true); setConnState('idle'); setQrData(null);
+        setNewInstName(`${agent.slug}-${Date.now().toString(36)}`);
+      };
+
+      const reconfigureWebhooks = async () => {
+        try {
+          const res = await api('/whatsapp/reconfigure-webhooks', { method: 'POST' });
+          const ok = res.results?.filter(r => r.ok).length || 0;
+          const fail = res.results?.filter(r => !r.ok).length || 0;
+          toast(`Webhooks atualizados: ${ok} OK${fail ? `, ${fail} com erro` : ''}`, fail ? 'error' : 'success');
+        } catch (e) { toast(e.message, 'error'); }
+      };
+
+      const createQRInstance = async () => {
+        if (!newInstName.trim()) return;
+        setConnState('creating');
+        try {
+          const data = await api('/whatsapp/create-instance', {
+            method: 'POST',
+            body: JSON.stringify({ name: newInstName.trim(), agent_slug: agent.slug }),
+          });
+          setQrData(data.qr);
+          setConnState('pending_scan');
+          // Poll status a cada 4s
+          qrPollRef.current = setInterval(async () => {
+            try {
+              const { state } = await api(`/whatsapp/instance-status/${newInstName.trim()}`);
+              if (state === 'open') {
+                stopQRPoll();
+                setConnState('connected');
+                toast('WhatsApp conectado com sucesso!', 'success');
+                setTimeout(async () => {
+                  setShowQRFlow(false); setConnState('idle'); setQrData(null);
+                  await load();
+                }, 2500);
+              } else if (state !== 'connecting' && state !== 'unknown') {
+                // QR expirou, busca novo
+                try {
+                  const qrRes = await api(`/whatsapp/instance-qr/${newInstName.trim()}`);
+                  if (qrRes.qr) setQrData(qrRes.qr);
+                } catch {}
+              }
+            } catch {}
+          }, 4000);
+        } catch (e) { setConnState('error'); toast(e.message, 'error'); }
+      };
 
       if (loading) return <Loading />;
 
@@ -6603,24 +6940,105 @@
               <div className="space-y-8">
                  {/* Canais */}
                  <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-8 shadow-sm border border-gray-200 shrink-0">
-                    <div className="flex items-center gap-3 mb-6 shrink-0"><div className="p-2.5 bg-green-100 text-green-700 rounded-lg"><Smartphone size={20} /></div><h2 className="text-xl font-bold text-gray-900">Canais Operacionais</h2></div>
-                    {channels.map((ch, idx) => (
-                      <div key={idx} className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-xl shrink-0">
-                        <div className="flex gap-2 mb-2">
-                          <input type="text" value={ch.number} onChange={e => updateCh(idx, { number: e.target.value })} className="flex-1 px-4 py-2.5 bg-white border border-gray-200 rounded-xl outline-none focus:border-[#658210] font-medium text-sm" placeholder="+55 (11) 99999-9999" />
-                          <label className="flex items-center px-3 bg-white border border-gray-200 rounded-xl text-xs font-bold gap-2 cursor-pointer">
-                            <input type="checkbox" checked={!!ch.active} onChange={e => updateCh(idx, { active: e.target.checked ? 1 : 0 })} />
-                            {ch.active ? 'On' : 'Off'}
-                          </label>
-                          <button onClick={() => removeCh(idx)} className="px-3 rounded-xl border border-red-200 text-red-500 hover:bg-red-50"><Trash2 size={16} /></button>
+                    <div className="flex items-center justify-between mb-6 shrink-0">
+                      <div className="flex items-center gap-3"><div className="p-2.5 bg-green-100 text-green-700 rounded-lg"><Smartphone size={20} /></div><div><h2 className="text-xl font-bold text-gray-900">Canais WhatsApp</h2><p className="text-xs text-gray-500 mt-0.5">Conecte números e gerencie instâncias</p></div></div>
+                      <button onClick={startQRFlow} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-black hover:opacity-90 transition" style={{backgroundColor:primaryColor}}><Plus size={15}/> Conectar Número</button>
+                    </div>
+
+                    {/* QR Flow */}
+                    {showQRFlow && (
+                      <div className="mb-5 p-5 border-2 border-dashed border-green-300 bg-green-50 rounded-2xl">
+                        <div className="flex items-center justify-between mb-4">
+                          <p className="font-bold text-gray-900 text-sm flex items-center gap-2"><Smartphone size={15} className="text-green-600"/> Conectar Novo Número WhatsApp</p>
+                          <button onClick={() => { stopQRPoll(); setShowQRFlow(false); setConnState('idle'); setQrData(null); }} className="p-1 rounded-lg hover:bg-green-100 text-gray-500"><X size={16}/></button>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-500 font-medium whitespace-nowrap">Instância Evolution:</span>
-                          <input type="text" value={ch.evolution_instance || ''} onChange={e => updateCh(idx, { evolution_instance: e.target.value })} className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-lg outline-none focus:border-[#658210] text-sm font-mono" placeholder="nome-da-instancia" />
+                        {connState === 'idle' && (
+                          <div className="flex gap-2">
+                            <input value={newInstName} onChange={e => setNewInstName(e.target.value.replace(/\s/g,''))}
+                              placeholder="nome-da-instancia (sem espaços)"
+                              className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white outline-none focus:border-green-400 font-mono"/>
+                            <button onClick={createQRInstance} disabled={!newInstName.trim()} className="px-5 py-2.5 rounded-xl font-bold text-sm text-black disabled:opacity-50 hover:opacity-90" style={{backgroundColor:primaryColor}}>Gerar QR</button>
+                          </div>
+                        )}
+                        {connState === 'creating' && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600 py-4 justify-center"><Loader2 size={18} className="animate-spin text-green-600"/> Criando instância na Evolution API...</div>
+                        )}
+                        {connState === 'pending_scan' && (
+                          <div className="flex flex-col items-center gap-4 py-2">
+                            <p className="text-sm text-gray-600 font-medium">Escaneie o QR Code com o WhatsApp do número que deseja conectar</p>
+                            {qrData ? (
+                              qrData.base64 ? (
+                                <img src={qrData.base64.startsWith('data:') ? qrData.base64 : `data:image/png;base64,${qrData.base64}`} alt="QR Code WhatsApp" className="w-52 h-52 rounded-2xl border-4 border-white shadow-lg"/>
+                              ) : (qrData.code || typeof qrData === 'string') ? (
+                                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=210x210&data=${encodeURIComponent(qrData.code || qrData)}`} alt="QR Code WhatsApp" className="w-52 h-52 rounded-2xl border-4 border-white shadow-lg"/>
+                              ) : (
+                                <div className="w-52 h-52 bg-white rounded-2xl flex items-center justify-center text-xs text-gray-400 text-center p-4">QR disponível na Evolution API. Acesse e escaneie manualmente.</div>
+                              )
+                            ) : (
+                              <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 size={16} className="animate-spin"/> Carregando QR...</div>
+                            )}
+                            <div className="flex items-center gap-2 text-xs font-bold text-amber-700 bg-amber-100 px-4 py-2 rounded-full">
+                              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"/>Aguardando conexão... (atualiza automaticamente)
+                            </div>
+                            <p className="text-[10px] text-gray-400">Instância: <code className="font-mono">{newInstName}</code></p>
+                          </div>
+                        )}
+                        {connState === 'connected' && (
+                          <div className="flex flex-col items-center gap-3 py-6">
+                            <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center"><CheckCircle size={28} className="text-green-600"/></div>
+                            <p className="text-lg font-black text-green-700">WhatsApp Conectado!</p>
+                            <p className="text-xs text-gray-500 font-mono">{newInstName}</p>
+                            <p className="text-xs text-gray-400">O agente já está respondendo mensagens neste número.</p>
+                          </div>
+                        )}
+                        {connState === 'error' && (
+                          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700 font-medium">
+                            Erro ao criar instância. Verifique se o nome não está em uso e tente novamente.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Lista de canais */}
+                    {channels.length === 0 && !showQRFlow && (
+                      <div className="py-8 text-center text-sm text-gray-400">
+                        <Smartphone size={32} className="mx-auto mb-2 opacity-30"/>
+                        Nenhum número conectado ainda. Clique em <strong>Conectar Número</strong>.
+                      </div>
+                    )}
+                    {channels.map((ch, idx) => (
+                      <div key={idx} className="mb-3 p-4 bg-gray-50 border border-gray-200 rounded-2xl">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2.5 h-2.5 rounded-full ${ch.active ? 'bg-green-500' : 'bg-gray-300'}`}/>
+                            <span className="font-bold text-sm text-gray-900 font-mono">{ch.evolution_instance || 'sem instância'}</span>
+                            {ch.number && <span className="text-xs text-gray-500">{ch.number}</span>}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="flex items-center gap-1.5 text-xs font-bold cursor-pointer">
+                              <input type="checkbox" checked={!!ch.active} onChange={e => updateCh(idx, { active: e.target.checked ? 1 : 0 })} className="rounded"/>
+                              {ch.active ? <span className="text-green-600">Ativo</span> : <span className="text-gray-400">Inativo</span>}
+                            </label>
+                            {ch.evolution_instance && (
+                              <button onClick={() => deleteInstance(ch.evolution_instance)} title="Desconectar" className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition"><Unlink size={14}/></button>
+                            )}
+                            <button onClick={() => removeCh(idx)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-200 transition"><Trash2 size={14}/></button>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <input type="text" value={ch.number} onChange={e => updateCh(idx, { number: e.target.value })} className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:border-green-400 text-sm" placeholder="+55 (11) 99999-9999"/>
+                          <input type="text" value={ch.evolution_instance || ''} onChange={e => updateCh(idx, { evolution_instance: e.target.value })} className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:border-green-400 text-sm font-mono" placeholder="nome-da-instancia"/>
                         </div>
                       </div>
                     ))}
-                    <button onClick={addCh} className="flex items-center gap-2 text-sm font-bold text-[#658210] hover:text-black transition-colors mt-2"><Plus size={16} /> Adicionar canal</button>
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                      <button onClick={addCh} className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-gray-900 transition-colors"><Plus size={16}/> Adicionar canal manual</button>
+                      {channels.length > 0 && (
+                        <button onClick={reconfigureWebhooks} className="flex items-center gap-1.5 text-xs font-bold text-amber-600 hover:text-amber-800 transition-colors px-3 py-1.5 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200">
+                          <RefreshCw size={12}/> Reconfigurar Webhooks
+                        </button>
+                      )}
+                    </div>
                  </div>
 
                  {/* Script & IA */}
@@ -6660,7 +7078,7 @@
                  </div>
               </div>
 
-              {/* Presença Digital */}
+              {/* Presença Digital + Google Calendar */}
               <div className="space-y-8 flex flex-col shrink-0">
                  <div className="bg-white/80 backdrop-blur-sm rounded-[2rem] p-8 shadow-sm border border-gray-200 flex-1 shrink-0">
                     <div className="flex items-center gap-3 mb-6"><div className="p-2.5 bg-orange-100 text-orange-700 rounded-lg"><Globe size={20} /></div><h2 className="text-xl font-bold text-gray-900">Presença Digital</h2></div>
@@ -6670,6 +7088,11 @@
                        <div><label className="flex items-center gap-2 text-xs font-bold text-gray-500 mb-2 uppercase"><Linkedin size={14} /> LinkedIn Business</label><input type="url" value={settings.linkedin || ''} onChange={e => set('linkedin', e.target.value)} placeholder="https://..." className="w-full px-4 py-3 bg-white border rounded-xl outline-none focus:border-orange-400 font-medium" /></div>
                     </div>
                  </div>
+
+                 {/* Google Agenda — apenas booker e leadflow */}
+                 {(agent.slug === 'booker' || agent.slug === 'leadflow') && (
+                   <GoogleCalendarCard primaryColor={primaryColor} />
+                 )}
               </div>
            </div>
            <div className="flex justify-end pt-4 shrink-0">
@@ -6861,6 +7284,10 @@
                   </div>
                 )}
               </div>
+
+              {(agent.slug === 'booker' || agent.slug === 'leadflow') && (
+                <GoogleCalendarCard primaryColor={primaryColor} />
+              )}
 
               <div className="flex justify-end">
                 <button onClick={save} disabled={saving} className="px-8 py-4 rounded-xl font-bold text-black hover:scale-105 transition-all flex items-center gap-2 disabled:opacity-60" style={{backgroundColor:primaryColor}}>
