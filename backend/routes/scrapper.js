@@ -6,12 +6,29 @@ const apify = require('../services/apify');
 
 const router = express.Router();
 
+async function getRepeatedPhones(uid, currentRunId, phones) {
+  if (!phones.length) return new Set();
+  const { data } = await supabase
+    .from('scrapper_leads').select('phone')
+    .eq('user_id', uid).neq('run_id', currentRunId)
+    .in('phone', phones);
+  return new Set((data || []).map(r => r.phone).filter(Boolean));
+}
+
+function buildStats(leads) {
+  return {
+    total:     leads.length,
+    potential: leads.filter(l => (l.score || 0) >= 60).length,
+    repeated:  leads.filter(l => l.is_repeated).length,
+  };
+}
+
 /* ----------------------------------------------------------
    Start a scraping run
 ---------------------------------------------------------- */
 router.post('/run', authRequired, async (req, res) => {
   const uid = req.user.uid;
-  const { search_term, location, max_results = 50, min_rating } = req.body || {};
+  const { search_term, location, max_results = 50, min_rating, max_rating, min_reviews, max_reviews } = req.body || {};
   if (!search_term) return res.status(400).json({ error: 'search_term obrigatório' });
 
   let apifyRunId = null;
@@ -27,7 +44,7 @@ router.post('/run', authRequired, async (req, res) => {
     agent_slug: 'pixt-bdr',
     apify_run_id: apifyRunId,
     status: 'running',
-    filters: { search_term, location, max_results, min_rating },
+    filters: { search_term, location, max_results, min_rating, max_rating, min_reviews, max_reviews },
   }).select().single();
 
   if (error) return res.status(500).json({ error: error.message });
@@ -87,7 +104,10 @@ router.post('/runs/:runId/analyze', authRequired, async (req, res) => {
 
   if (run.analyzed) {
     const { data: leads } = await supabase.from('scrapper_leads').select('*').eq('run_id', run.id).order('score', { ascending: false });
-    return res.json({ leads: leads || [], already_analyzed: true });
+    const phones = (leads || []).map(l => l.phone).filter(Boolean);
+    const repeatedPhones = await getRepeatedPhones(uid, run.id, phones);
+    const leadsOut = (leads || []).map(l => ({ ...l, is_repeated: l.phone ? repeatedPhones.has(l.phone) : false }));
+    return res.json({ leads: leadsOut, stats: buildStats(leadsOut), already_analyzed: true });
   }
 
   // Fetch raw items from Apify
@@ -98,7 +118,29 @@ router.post('/runs/:runId/analyze', authRequired, async (req, res) => {
     return res.status(500).json({ error: `Erro ao buscar resultados do Apify: ${e.message}` });
   }
 
-  // Deduplicate by phone
+  // Filtro por review_count (tamanho da empresa)
+  const runFilters = run.filters || {};
+  const minReviews = parseInt(runFilters.min_reviews || '0') || 0;
+  const maxReviews = parseInt(runFilters.max_reviews || '0') || 0;
+  if (minReviews || maxReviews) {
+    items = items.filter(item => {
+      const rc = parseInt(item.reviewsCount || item.reviewCount || 0);
+      if (minReviews && rc < minReviews) return false;
+      if (maxReviews && rc > maxReviews) return false;
+      return true;
+    });
+  }
+
+  // Filtro por rating máximo (Apify só suporta min natively)
+  const maxRating = parseFloat(runFilters.max_rating || '0') || 0;
+  if (maxRating) {
+    items = items.filter(item => {
+      const r = parseFloat(item.totalScore || item.rating || 0);
+      return !r || r <= maxRating;
+    });
+  }
+
+  // Deduplicate by phone (within this run)
   const seenPhones = new Set();
   const unique = [];
   for (const item of items) {
@@ -160,7 +202,10 @@ Retorne APENAS o JSON válido (sem markdown):
   await supabase.from('scrapper_runs').update({ status: 'done', analyzed: true, results_count: rows.length }).eq('id', run.id);
 
   const { data: leads } = await supabase.from('scrapper_leads').select('*').eq('run_id', run.id).order('score', { ascending: false });
-  res.json({ leads: leads || [] });
+  const phones = (leads || []).map(l => l.phone).filter(Boolean);
+  const repeatedPhones = await getRepeatedPhones(uid, run.id, phones);
+  const leadsOut = (leads || []).map(l => ({ ...l, is_repeated: l.phone ? repeatedPhones.has(l.phone) : false }));
+  res.json({ leads: leadsOut, stats: buildStats(leadsOut) });
 });
 
 /* ----------------------------------------------------------
