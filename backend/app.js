@@ -42,6 +42,31 @@ app.use('/api/traffic', require('./routes/traffic'));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
+// Página de exclusão de dados (Meta / LGPD)
+app.get('/privacy', (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Exclusão de Dados – Pixt</title>
+  <style>
+    body { font-family: sans-serif; max-width: 640px; margin: 60px auto; padding: 0 24px; color: #222; }
+    h1 { font-size: 1.6rem; margin-bottom: 8px; }
+    p { line-height: 1.7; }
+    a { color: #0066cc; }
+  </style>
+</head>
+<body>
+  <h1>Exclusão de Dados</h1>
+  <p>Para solicitar a exclusão dos seus dados da plataforma Pixt, envie um e-mail para:</p>
+  <p><strong><a href="mailto:contato.pixt@gmail.com">contato.pixt@gmail.com</a></strong></p>
+  <p>Informe o seu nome e e-mail cadastrado. Processaremos sua solicitação em até 15 dias úteis e removeremos todos os seus dados, incluindo tokens de acesso de contas vinculadas (Meta Ads, Google Ads).</p>
+  <p style="margin-top:40px;font-size:0.85rem;color:#666;">Pixt – plataforma.pixt.com.br</p>
+</body>
+</html>`);
+});
+
 // 404 das APIs
 app.use('/api', (req, res) => res.status(404).json({ error: 'Endpoint inexistente' }));
 
