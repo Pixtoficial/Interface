@@ -2403,7 +2403,7 @@
     };
 
     /* ---- Traffic & Mídias Tab — routed by activeTab prop ---- */
-    const AdminTrafficTab = ({ primaryColor, activeTab, accountSeed = 0, realData = {} }) => {
+    const AdminTrafficTab = ({ primaryColor, activeTab, accountSeed = 0, realData = {}, zeroWhenEmpty = false }) => {
       const subTab = activeTab || 'overview';
 
       // Processa dados reais do Meta Ads
@@ -2465,15 +2465,16 @@
 
       // ── Mock data base — seeded by connected account ──────────
       const acctMult = accountSeed > 0 ? (0.45 + (accountSeed % 70) / 70 * 1.4) : 1;
+      const mockEnabled = !zeroWhenEmpty;
       const USER_B = {
-        totalSpend:    Math.round(68420  * acctMult),
-        leads:         Math.round(1847   * acctMult),
-        clicks:        Math.round(72300  * acctMult),
-        impressions:   Math.round(3420000 * acctMult),
-        pageViews:     Math.round(294000 * acctMult),
-        metaSpend:     Math.round(42600  * acctMult),
-        googleSpend:   Math.round(25820  * acctMult),
-        totalRevenue:  Math.round(321800 * acctMult),
+        totalSpend:   mockEnabled ? Math.round(68420   * acctMult) : 0,
+        leads:        mockEnabled ? Math.round(1847    * acctMult) : 0,
+        clicks:       mockEnabled ? Math.round(72300   * acctMult) : 0,
+        impressions:  mockEnabled ? Math.round(3420000 * acctMult) : 0,
+        pageViews:    mockEnabled ? Math.round(294000  * acctMult) : 0,
+        metaSpend:    mockEnabled ? Math.round(42600   * acctMult) : 0,
+        googleSpend:  mockEnabled ? Math.round(25820   * acctMult) : 0,
+        totalRevenue: mockEnabled ? Math.round(321800  * acctMult) : 0,
       };
       const seededRnd = (seed) => { let s=seed; return ()=>{ s=(s*9301+49297)%233280; return s/233280; }; };
       const eachDay = (start, end) => { const out=[]; let cur=new Date(start); cur.setHours(0,0,0,0); const fin=new Date(end); fin.setHours(23,59,59,999); while(cur<=fin){ out.push(new Date(cur)); cur=new Date(cur); cur.setDate(cur.getDate()+1); } return out; };
@@ -4027,6 +4028,7 @@
                 {activeTab === 'calendar' && <CalendarTab agent={currentAgent} primaryColor={primaryColor} />}
                 {activeTab === 'rag' && <RagTab agent={currentAgent} primaryColor={primaryColor} />}
                 {activeTab === 'scrapper' && <ScrapperTab agent={currentAgent} primaryColor={primaryColor} />}
+                {activeTab === 'leads-importados' && <LeadsImportadosTab primaryColor={primaryColor} />}
                 {activeTab === 'builder' && <BuilderTab primaryColor={primaryColor} />}
                 {activeTab === 'logs' && <LogsTab primaryColor={primaryColor} />}
                 {activeTab === 'settings' && <ClientSettingsView agent={currentAgent} primaryColor={primaryColor} />}
@@ -4135,6 +4137,7 @@
               {currentAgent.slug === 'pixt-bdr' && (
                 <>
                   <NavI icon={<MapPin size={18} />} label="Scrapper de Leads" isActive={activeTab === 'scrapper'} onClick={() => setActiveTab('scrapper')} />
+                  <NavI icon={<Database size={18} />} label="Leads Importados" isActive={activeTab === 'leads-importados'} onClick={() => setActiveTab('leads-importados')} />
                   <NavI icon={<KanbanSquare size={18} />} label="Pipeline Importado" isActive={activeTab === 'pipeline'} onClick={() => setActiveTab('pipeline')} />
                 </>
               )}
@@ -4193,6 +4196,7 @@
         builder: 'Builder Visual de Workflows',
         logs: 'Execuções & Logs',
         scrapper: 'PIXT BDR — Prospecção Inteligente',
+        'leads-importados': 'Leads Importados',
         revenue: 'Receita',
         contacts: 'Contatos 360°',
         tasks: 'Gestão de Tarefas',
@@ -4517,6 +4521,7 @@
             activeTab={subTab}
             accountSeed={getSeed()}
             realData={realData}
+            zeroWhenEmpty={true}
           />
         </div>
       );
@@ -6447,6 +6452,131 @@
                   </div>
                 )}
                 <button onClick={onSent} className="mt-4 px-6 py-2.5 rounded-xl font-bold text-sm text-black" style={{ backgroundColor: primaryColor }}>Fechar</button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    const LeadsImportadosTab = ({ primaryColor }) => {
+      const toast = useToast();
+      const [leads, setLeads] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [search, setSearch] = useState('');
+      const [searchInput, setSearchInput] = useState('');
+      const [total, setTotal] = useState(0);
+
+      const load = async (q = '') => {
+        setLoading(true);
+        try {
+          const params = new URLSearchParams({ limit: '200' });
+          if (q) params.set('search', q);
+          const d = await api(`/scrapper/leads?${params}`);
+          setLeads(d.leads || []);
+          setTotal(d.total || 0);
+        } catch (e) { toast(e.message, 'error'); }
+        finally { setLoading(false); }
+      };
+
+      useEffect(() => { load(); }, []);
+
+      const handleSearch = () => { setSearch(searchInput); load(searchInput); };
+
+      const scoreColor = (s) => s >= 70 ? '#22c55e' : s >= 40 ? '#f59e0b' : '#ef4444';
+      const scoreBg   = (s) => s >= 70 ? '#f0fdf4' : s >= 40 ? '#fffbeb' : '#fef2f2';
+
+      const fmtPhone = (p) => {
+        if (!p) return '—';
+        const d = String(p).replace(/\D/g, '');
+        if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+        if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+        return p;
+      };
+
+      return (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+              <div>
+                <h3 className="font-black text-gray-900 flex items-center gap-2"><Database size={18}/> Leads Importados</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{total} leads extraídos via scrapper</p>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={searchInput}
+                  onChange={e => setSearchInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                  placeholder="Buscar por nome..."
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400 bg-gray-50 w-48"
+                />
+                <button onClick={handleSearch} className="px-4 py-2 rounded-xl text-sm font-bold text-black hover:opacity-90 transition" style={{backgroundColor:primaryColor}}>
+                  Buscar
+                </button>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-16 gap-2 text-gray-400">
+                <Loader2 size={20} className="animate-spin"/> Carregando leads...
+              </div>
+            ) : leads.length === 0 ? (
+              <div className="py-16 text-center text-gray-400">
+                <Database size={36} className="mx-auto mb-3 opacity-30"/>
+                <p className="font-semibold">Nenhum lead importado ainda.</p>
+                <p className="text-xs mt-1">Use o Scrapper de Leads para extrair e importar empresas.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      {['Empresa', 'Nota ICP', 'Email', 'Telefone', 'Site', 'Cidade', 'Categoria'].map(h => (
+                        <th key={h} className="text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {leads.map(l => (
+                      <tr key={l.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="py-3 pr-4">
+                          <div className="font-semibold text-gray-900 max-w-[180px] truncate" title={l.name}>{l.name}</div>
+                          {l.insight && <p className="text-[10px] text-gray-400 truncate max-w-[180px]" title={l.insight}>{l.insight}</p>}
+                        </td>
+                        <td className="py-3 pr-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="h-full rounded-full" style={{width:`${l.score||0}%`, backgroundColor:scoreColor(l.score||0)}}/>
+                            </div>
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{color:scoreColor(l.score||0), backgroundColor:scoreBg(l.score||0)}}>
+                              {l.score||0}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3 pr-4 text-gray-400 text-xs">—</td>
+                        <td className="py-3 pr-4">
+                          {l.phone ? (
+                            <a href={`tel:+55${l.phone}`} className="text-blue-600 hover:underline text-xs font-mono">{fmtPhone(l.phone)}</a>
+                          ) : <span className="text-gray-300 text-xs">—</span>}
+                        </td>
+                        <td className="py-3 pr-4">
+                          {l.website ? (
+                            <a href={l.website.startsWith('http') ? l.website : `https://${l.website}`} target="_blank" rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline text-xs truncate max-w-[140px] block" title={l.website}>
+                              {l.website.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]}
+                            </a>
+                          ) : <span className="text-gray-300 text-xs">—</span>}
+                        </td>
+                        <td className="py-3 pr-4 text-xs text-gray-500">{l.city || '—'}</td>
+                        <td className="py-3 pr-4">
+                          {l.category ? (
+                            <span className="text-[10px] font-medium bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{l.category}</span>
+                          ) : <span className="text-gray-300 text-xs">—</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

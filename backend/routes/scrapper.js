@@ -250,4 +250,28 @@ router.post('/prospect', authRequired, async (req, res) => {
   res.json({ sent, errors, total: scLeads.length });
 });
 
+/* ----------------------------------------------------------
+   Todos os leads importados do usuário (tabela geral)
+---------------------------------------------------------- */
+router.get('/leads', authRequired, async (req, res) => {
+  const uid = req.user.uid;
+  const page = Math.max(0, parseInt(req.query.page || '0'));
+  const limit = Math.min(500, parseInt(req.query.limit || '200'));
+  const search = (req.query.search || '').trim();
+
+  let query = supabase
+    .from('scrapper_leads')
+    .select('id, name, phone, website, score, category, city, rating, review_count, insight, revenue_estimate, company_size, imported, created_at', { count: 'exact' })
+    .eq('user_id', uid)
+    .order('score', { ascending: false })
+    .order('created_at', { ascending: false })
+    .range(page * limit, page * limit + limit - 1);
+
+  if (search) query = query.ilike('name', `%${search}%`);
+
+  const { data, count, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ leads: data || [], total: count || 0 });
+});
+
 module.exports = router;
